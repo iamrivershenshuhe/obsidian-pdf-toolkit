@@ -158,6 +158,12 @@ export class RefPopover extends Component {
         this.hide();
       };
     }
+    const ask = links.createEl("button", { text: t("ref_ask"), cls: "pdftk-chat-chip" });
+    ask.onclick = () => {
+      this.hide();
+      const label = e.num !== undefined ? `[${e.num}]` : `${e.firstAuthor ?? ""} ${e.year ?? ""}`.trim();
+      void this.plugin.askAiAboutReference(e.text, label);
+    };
     const add = links.createEl("button", { text: t("ref_addNote"), cls: "pdftk-chat-chip" });
     add.onclick = async () => {
       const file = this.toolbar.file;

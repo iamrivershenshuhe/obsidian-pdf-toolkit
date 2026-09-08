@@ -36,8 +36,9 @@ import { extractText, renderPagesToPng } from "./pdf/pdfjs";
 import { FieldSpec, FormValues, formModal, pickFilesOrdered, pickOneFile, promptPageRange, promptPassword, showInfoModal } from "./ui/modals";
 import { OrganizeModal } from "./ui/organize";
 import { PdfToolbar } from "./ui/toolbar";
-import { exportBuiltinTemplate, listTemplates, openReadingNote } from "./ui/reading";
+import { ensurePaperFolder, exportBuiltinTemplate, listTemplates, openReadingNote } from "./ui/reading";
 import { CHAT_VIEW, ChatContext, ChatView, CtxMode } from "./ui/chat";
+import { REFS_VIEW, RefsView } from "./ui/refsview";
 import { ensureDarkFilters, removeDarkFilters } from "./ui/darkmode";
 import type { LlmProvider } from "./llm/runner";
 
@@ -76,6 +77,8 @@ interface Settings {
   customPrompts: CustomPrompt[];
   hideBuiltinPrompts: boolean;
   refHover: boolean;
+  organizeFolders: boolean;
+  refQuestion: string;
 }
 
 export interface CustomPrompt {
@@ -116,6 +119,8 @@ const DEFAULT_SETTINGS: Settings = {
   customPrompts: [],
   hideBuiltinPrompts: false,
   refHover: true,
+  organizeFolders: true,
+  refQuestion: "",
 };
 
 /* ------------------------------------------------------------------ */
@@ -269,6 +274,18 @@ export default class PdfToolkitPlugin extends Plugin {
 
     this.registerView(CHAT_VIEW, (leaf) => new ChatView(leaf, this));
     this.addCommand({ id: "open-chat", name: t("tb_chat"), callback: () => void this.openChat() });
+    this.registerView(REFS_VIEW, (leaf) => new RefsView(leaf, this));
+    this.addCommand({ id: "open-refs", name: t("cmd_openRefs"), callback: () => void this.openRefsView() });
+    this.addCommand({
+      id: "organize-folder",
+      name: t("cmd_organize"),
+      checkCallback: (checking) => {
+        const file = this.getActivePdf();
+        if (!file) return false;
+        if (!checking) void ensurePaperFolder(this, file).catch((e) => new Notice(t("failed", { msg: errMsg(e) })));
+        return true;
+      },
+    });
     ensureDarkFilters(this.settings.darkBg, this.settings.darkText);
 
     // Annotation toolbar on every PDF view
@@ -298,7 +315,7 @@ export default class PdfToolkitPlugin extends Plugin {
   async getChatContext(mode: CtxMode): Promise<ChatContext | null> {
     const tb = this.chatTarget();
     const file = tb?.file;
-    if (!tb || !file) return null;
+    if (!tb || !file || mode === "reference") return null;
     const max = Math.max(2000, this.settings.llmMaxChars || 60000);
     const page = tb.currentPage();
     const total = tb.pageCount();
@@ -320,16 +337,34 @@ export default class PdfToolkitPlugin extends Plugin {
     return typeof adapter.getBasePath === "function" ? adapter.getBasePath() : process.cwd();
   }
 
-  async openChat() {
-    const existing = this.app.workspace.getLeavesOfType(CHAT_VIEW)[0];
-    if (existing) {
-      await this.app.workspace.revealLeaf(existing);
-      return;
+  async openChat(): Promise<ChatView | null> {
+    let leaf = this.app.workspace.getLeavesOfType(CHAT_VIEW)[0];
+    if (!leaf) {
+      const l = this.app.workspace.getRightLeaf(false);
+      if (!l) return null;
+      await l.setViewState({ type: CHAT_VIEW, active: true });
+      leaf = l;
     }
-    const leaf = this.app.workspace.getRightLeaf(false);
-    if (!leaf) return;
-    await leaf.setViewState({ type: CHAT_VIEW, active: true });
     await this.app.workspace.revealLeaf(leaf);
+    return leaf.view instanceof ChatView ? leaf.view : null;
+  }
+
+  async openRefsView() {
+    let leaf = this.app.workspace.getLeavesOfType(REFS_VIEW)[0];
+    if (!leaf) {
+      const l = this.app.workspace.getLeftLeaf(false);
+      if (!l) return;
+      await l.setViewState({ type: REFS_VIEW, active: true });
+      leaf = l;
+    }
+    await this.app.workspace.revealLeaf(leaf);
+    if (leaf.view instanceof RefsView) void leaf.view.refresh(true);
+  }
+
+  async askAiAboutReference(text: string, label: string) {
+    const view = await this.openChat();
+    if (!view) return;
+    view.askReference(text, label);
   }
 
   ensureToolbars() {
@@ -1299,6 +1334,27 @@ class PdfToolkitSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName(t("setOrganize"))
+      .setDesc(t("setOrganizeDesc"))
+      .addToggle((tg) =>
+        tg.setValue(s.organizeFolders).onChange(async (v) => {
+          s.organizeFolders = v;
+          await this.plugin.saveSettings();
+        }),
+      );
+
+    new Setting(containerEl)
+      .setName(t("setRefQuestion"))
+      .addTextArea((ta) => {
+        ta.setPlaceholder(t("ref_defaultQuestion")).setValue(s.refQuestion).onChange(async (v) => {
+          s.refQuestion = v;
+          await this.plugin.saveSettings();
+        });
+        ta.inputEl.rows = 3;
+        ta.inputEl.cols = 40;
+      });
+
+    new Setting(containerEl)
       .setName(t("setRefHover"))
       .setDesc(t("setRefHoverDesc"))
       .addToggle((tg) =>
@@ -1320,7 +1376,7 @@ class PdfToolkitSettingTab extends PluginSettingTab {
       );
       row.addDropdown((dd) =>
         dd
-          .addOptions({ selection: t("ctx_selection"), page: t("ctx_page"), document: t("ctx_document") })
+          .addOptions({ selection: t("ctx_selection"), page: t("ctx_page"), document: t("ctx_document"), reference: t("ctx_reference") })
           .setValue(p.mode)
           .onChange(async (v) => {
             p.mode = v as CtxMode;

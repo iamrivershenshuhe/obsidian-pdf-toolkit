@@ -148,7 +148,7 @@ export class PdfToolbar extends Component {
   private hookedBus: Any = null;
   private busy = false;
   private password: string | undefined;
-  private lastPath = "";
+  private lastFile: TFile | null = null;
   private lastDoc: Any = null;
   private drag: Drag | null = null;
 
@@ -322,6 +322,7 @@ export class PdfToolbar extends Component {
           if (!this.plugin.settings.refHover) this.refPop.hide();
         }),
     );
+    menu.addItem((item) => item.setTitle(t("cmd_openRefs")).setIcon("panel-left").onClick(() => void this.plugin.openRefsView()));
     menu.addItem((item) => item.setTitle(t("ref_list")).setIcon("list").onClick(() => void this.refPop.openList()));
     menu.showAtMouseEvent(e);
   }
@@ -416,9 +417,9 @@ export class PdfToolbar extends Component {
   }
 
   private sync() {
-    const path = this.file?.path ?? "";
-    if (path !== this.lastPath) {
-      this.lastPath = path;
+    // Compare file identity, not path: a rename/move (organise into folder) must keep the live layer.
+    if (this.file !== this.lastFile) {
+      this.lastFile = this.file;
       this.undoStack = [];
       this.password = undefined;
       this.clearLive();

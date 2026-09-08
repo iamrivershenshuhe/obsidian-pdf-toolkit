@@ -26,6 +26,94 @@ export interface RunResult {
   stderr: string;
   /** full text produced (assembled from chunks or from the CLI's final-message output) */
   text: string;
+  /** Claude Code session id (stream-json), usable with --resume */
+  sessionId?: string;
+}
+
+export interface RunOptions {
+  plainText?: boolean;
+  /** Claude Code: continue this session instead of starting a new one */
+  resume?: string;
+}
+
+export interface SlashCommand {
+  name: string;
+  source: string;
+}
+
+/** Slash commands / skills the local CLIs know about (best effort, from their config folders). */
+export function listSlashCommands(provider: LlmProvider, vaultPath: string): SlashCommand[] {
+  const home = os.homedir();
+  const out: SlashCommand[] = [];
+  const seen = new Set<string>();
+  const add = (name: string, source: string) => {
+    const n = name.replace(/\.md$/i, "");
+    if (!n || seen.has(n)) return;
+    seen.add(n);
+    out.push({ name: n, source });
+  };
+  const files = (dir: string, ext = ".md") => {
+    try {
+      return fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter((d) => d.isFile() && d.name.toLowerCase().endsWith(ext))
+        .map((d) => d.name);
+    } catch {
+      return [];
+    }
+  };
+  // follow symlinks: ~/.claude/skills entries are links into the plugin cache
+  const dirs = (dir: string) => {
+    try {
+      return fs.readdirSync(dir).filter((n) => {
+        try {
+          return fs.statSync(path.join(dir, n)).isDirectory();
+        } catch {
+          return false;
+        }
+      });
+    } catch {
+      return [];
+    }
+  };
+  const walkSkills = (base: string, depth: number, onSkill: (name: string) => void) => {
+    if (depth < 0) return;
+    for (const sub of dirs(base)) {
+      const p = path.join(base, sub);
+      if (fs.existsSync(path.join(p, "SKILL.md"))) onSkill(sub);
+      else walkSkills(p, depth - 1, onSkill);
+    }
+  };
+  if (provider === "claude") {
+    for (const [base, label] of [
+      [path.join(home, ".claude", "commands"), "user command"],
+      [path.join(vaultPath, ".claude", "commands"), "project command"],
+    ]) {
+      for (const f of files(base)) add(f, label);
+      for (const sub of dirs(base)) for (const f of files(path.join(base, sub))) add(`${sub}:${f.replace(/\.md$/i, "")}`, label);
+    }
+    for (const [base, label] of [
+      [path.join(home, ".claude", "skills"), "skill"],
+      [path.join(vaultPath, ".claude", "skills"), "project skill"],
+    ]) {
+      walkSkills(base, 2, (name) => add(name, label));
+    }
+    // installed plugins: ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/{skills,commands}
+    const cache = path.join(home, ".claude", "plugins", "cache");
+    for (const mkt of dirs(cache)) {
+      for (const plugin of dirs(path.join(cache, mkt))) {
+        const versions = dirs(path.join(cache, mkt, plugin)).sort();
+        const ver = versions[versions.length - 1];
+        if (!ver) continue;
+        const root = path.join(cache, mkt, plugin, ver);
+        for (const f of files(path.join(root, "commands"))) add(`${plugin}:${f.replace(/\.md$/i, "")}`, "plugin command");
+        walkSkills(path.join(root, "skills"), 3, (name) => add(`${plugin}:${name}`, "plugin skill"));
+      }
+    }
+  } else if (provider === "codex") {
+    for (const f of files(path.join(home, ".codex", "prompts"))) add(f, "prompt");
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export interface RunHandle {
@@ -108,7 +196,7 @@ export interface Command {
   streamJson?: boolean;
 }
 
-export function buildCommand(s: LlmSettings, opts: { plainText?: boolean } = {}): Command {
+export function buildCommand(s: LlmSettings, opts: RunOptions = {}): Command {
   const model = s.llmModel.trim();
   switch (s.llmProvider) {
     case "claude": {
@@ -116,6 +204,7 @@ export function buildCommand(s: LlmSettings, opts: { plainText?: boolean } = {})
       const args = ["-p"];
       if (opts.plainText) args.push("--output-format", "text");
       else args.push("--output-format", "stream-json", "--verbose", "--include-partial-messages");
+      if (opts.resume) args.push("--resume", quote(opts.resume));
       if (model) args.push("--model", model);
       return { line: [quote(exe), ...args].join(" "), streamJson: !opts.plainText };
     }
@@ -138,7 +227,7 @@ export function runLlm(
   prompt: string,
   cwd: string,
   onChunk: (text: string) => void,
-  opts: { plainText?: boolean } = {},
+  opts: RunOptions = {},
 ): RunHandle {
   const cmd = buildCommand(s, opts);
   const envPath = buildPath(s.llmExtraPath || "");
@@ -154,6 +243,7 @@ export function runLlm(
   let text = "";
   let sawDelta = false;
   let pending = "";
+  let sessionId: string | undefined;
 
   const handleJsonLine = (line: string) => {
     const s = line.trim();
@@ -169,6 +259,7 @@ export function runLlm(
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const o = obj as any;
+    if (typeof o.session_id === "string" && o.session_id) sessionId = o.session_id;
     if (o.type === "stream_event") {
       const ev = o.event;
       if (ev?.type === "content_block_delta" && ev.delta?.type === "text_delta" && typeof ev.delta.text === "string") {
@@ -226,7 +317,7 @@ export function runLlm(
           /* ignore */
         }
       }
-      resolve({ code, stderr, text });
+      resolve({ code, stderr, text, sessionId });
     });
   });
 

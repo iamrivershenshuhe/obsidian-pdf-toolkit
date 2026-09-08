@@ -571,6 +571,136 @@
   justify-content: center;
 }
 
+/* Swatches show the colour as it will look under the active dark filter (what you pick is what you see). */
+.pdftk-dark-invert .pdftk-swatch {
+  filter: url(#pdftk-filter-dark);
+}
+
+.pdftk-dark-soft .pdftk-swatch {
+  filter: url(#pdftk-filter-soft);
+}
+
+.pdftk-dark-dim .pdftk-swatch {
+  filter: brightness(0.78) sepia(0.18);
+}
+
+/* --- references sidebar --------------------------------------------- */
+
+.pdftk-refs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+}
+
+.pdftk-refs-head {
+  flex: 0 0 auto;
+  padding: var(--size-4-2) var(--size-4-3);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.pdftk-refs-head input {
+  width: 100%;
+}
+
+.pdftk-refs-status {
+  margin-top: var(--size-4-1);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdftk-refs-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--size-4-2) var(--size-4-3);
+  font-size: var(--font-ui-small);
+}
+
+.pdftk-refs-list .pdftk-refpop-entry + .pdftk-refpop-entry {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: var(--size-4-2);
+  padding-top: var(--size-4-2);
+}
+
+/* --- chat: streaming text, slash menu, header row ------------------- */
+
+.pdftk-chat-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.pdftk-chat-row .pdftk-chat-target {
+  flex: 1 1 auto;
+}
+
+.pdftk-chat-icon {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pdftk-chat-body.is-streaming {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pdftk-chat-send.is-running {
+  background: var(--background-modifier-error);
+}
+
+.pdftk-chat-inputwrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.pdftk-chat-slash {
+  position: absolute;
+  left: var(--size-4-3);
+  right: var(--size-4-3);
+  bottom: 100%;
+  margin-bottom: 4px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-s);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 5;
+  font-size: var(--font-ui-small);
+}
+
+.pdftk-chat-slash-title {
+  padding: 4px 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.pdftk-chat-slash-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.pdftk-chat-slash-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pdftk-chat-slash-src {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
 /* --- reference hover card ------------------------------------------- */
 
 .pdftk-refpop {

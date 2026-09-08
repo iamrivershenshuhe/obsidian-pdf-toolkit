@@ -32,14 +32,45 @@ const COLOR_EMOJI: Record<string, string> = {
   "#111111": "⚫",
 };
 
+/** Is the PDF already inside a folder named after it? */
+export function isInPaperFolder(file: TFile): boolean {
+  return !!file.parent && file.parent.name === file.basename;
+}
+
+/** Folder where everything about this paper lives (the PDF's own folder once organised). */
+export function paperFolder(plugin: PdfToolkitPlugin, file: TFile): string {
+  if (!plugin.settings.organizeFolders) return folderOf(file);
+  return isInPaperFolder(file) ? folderOf(file) : joinPath(folderOf(file), file.basename);
+}
+
+/**
+ * Create `<paper name>/` next to the PDF and move the PDF into it (links are updated by Obsidian).
+ * Returns the folder path. No-op when organising is off or already done.
+ */
+export async function ensurePaperFolder(plugin: PdfToolkitPlugin, file: TFile): Promise<string> {
+  if (!plugin.settings.organizeFolders || isInPaperFolder(file)) return folderOf(file);
+  const folder = joinPath(folderOf(file), file.basename);
+  await ensureFolder(plugin.app, folder);
+  const target = joinPath(folder, file.name);
+  if (!plugin.app.vault.getAbstractFileByPath(target)) {
+    await plugin.app.fileManager.renameFile(file, target);
+    new Notice(t("org_moved", { folder }));
+  }
+  return folder;
+}
+
 export function readingNotePath(plugin: PdfToolkitPlugin, file: TFile): string {
-  const folder = plugin.settings.readingFolder ? normalizePath(plugin.settings.readingFolder) : folderOf(file);
+  const folder = plugin.settings.readingFolder ? normalizePath(plugin.settings.readingFolder) : paperFolder(plugin, file);
   return joinPath(folder, `${file.basename}.reading.md`);
 }
 
 export function getReadingNote(plugin: PdfToolkitPlugin, file: TFile): TFile | null {
-  const f = plugin.app.vault.getAbstractFileByPath(readingNotePath(plugin, file));
-  return f instanceof TFile ? f : null;
+  const candidates = [readingNotePath(plugin, file), joinPath(folderOf(file), `${file.basename}.reading.md`)];
+  for (const p of candidates) {
+    const f = plugin.app.vault.getAbstractFileByPath(p);
+    if (f instanceof TFile) return f;
+  }
+  return null;
 }
 
 /** Build a markdown link to a page (and, when possible, the exact selected text) using Obsidian's own helpers. */
@@ -309,6 +340,7 @@ export async function ensureReadingNote(plugin: PdfToolkitPlugin, file: TFile, c
   if (existing) return existing;
   const tpl = await resolveTemplate(plugin, choice);
   if (!tpl) return null;
+  if (!plugin.settings.readingFolder) await ensurePaperFolder(plugin, file);
   const path = readingNotePath(plugin, file);
   await ensureFolder(plugin.app, path.slice(0, path.lastIndexOf("/") > 0 ? path.lastIndexOf("/") : 0));
   const n = new Notice(t("working"), 0);
