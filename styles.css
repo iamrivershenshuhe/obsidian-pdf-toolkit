@@ -1,0 +1,664 @@
+/* PDF Toolkit */
+
+.pdf-toolkit-modal .pdf-toolkit-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  margin: 0 0 var(--size-4-3);
+}
+
+.pdf-toolkit-modal .pdf-toolkit-textarea {
+  width: 100%;
+  min-width: 260px;
+  font-family: var(--font-monospace);
+}
+
+/* --- file picker ---------------------------------------------------- */
+
+.pdf-toolkit-search {
+  width: 100%;
+  margin-bottom: var(--size-4-2);
+}
+
+.pdf-toolkit-results {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  margin-bottom: var(--size-4-3);
+}
+
+.pdf-toolkit-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-1);
+  padding: var(--size-4-1) var(--size-4-2);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.pdf-toolkit-row:last-child {
+  border-bottom: none;
+}
+
+.pdf-toolkit-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pdf-toolkit-row-selected {
+  cursor: default;
+}
+
+.pdf-toolkit-row-selected button {
+  padding: 0 var(--size-4-2);
+  height: 24px;
+  line-height: 24px;
+}
+
+.pdf-toolkit-grow {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-toolkit-selected h4 {
+  margin: var(--size-4-2) 0 var(--size-4-1);
+}
+
+/* --- info table ------------------------------------------------------ */
+
+.pdf-toolkit-info {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: var(--size-4-3);
+}
+
+.pdf-toolkit-info th {
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+  padding: var(--size-4-1) var(--size-4-2) var(--size-4-1) 0;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.pdf-toolkit-info td {
+  padding: var(--size-4-1) 0;
+  word-break: break-word;
+}
+
+/* --- organize pages -------------------------------------------------- */
+
+.pdf-toolkit-organize-modal {
+  width: min(1100px, 95vw);
+  max-width: 95vw;
+}
+
+.pdf-toolkit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+  margin-bottom: var(--size-4-2);
+}
+
+.pdf-toolkit-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdf-toolkit-status {
+  min-height: 1.4em;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  margin-bottom: var(--size-4-2);
+}
+
+.pdf-toolkit-grid {
+  --pdf-thumb-w: 140px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--pdf-thumb-w) + 16px), 1fr));
+  gap: var(--size-4-3);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--size-4-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.pdf-toolkit-card {
+  border: 2px solid transparent;
+  border-radius: var(--radius-m);
+  padding: var(--size-4-1);
+  background: var(--background-primary);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.1s, opacity 0.1s;
+}
+
+.pdf-toolkit-card:hover {
+  border-color: var(--background-modifier-border-hover);
+}
+
+.pdf-toolkit-card.is-selected {
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+}
+
+.pdf-toolkit-card.is-deleted {
+  opacity: 0.35;
+}
+
+.pdf-toolkit-card.is-deleted .pdf-toolkit-thumb::after {
+  content: "✕";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  color: var(--text-error);
+}
+
+.pdf-toolkit-card.is-dragging {
+  opacity: 0.4;
+}
+
+.pdf-toolkit-card.is-dragover {
+  border-color: var(--text-accent);
+  border-style: dashed;
+}
+
+.pdf-toolkit-thumb {
+  position: relative;
+  width: var(--pdf-thumb-w);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--background-secondary-alt);
+  border-radius: var(--radius-s);
+}
+
+.pdf-toolkit-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s;
+}
+
+.pdf-toolkit-thumb img.is-rotated {
+  max-width: none;
+  max-height: none;
+  width: auto;
+  height: var(--pdf-thumb-w);
+}
+
+.pdf-toolkit-thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--background-modifier-border) 0 6px,
+    transparent 6px 12px
+  );
+  opacity: 0.4;
+}
+
+.pdf-toolkit-card-label {
+  text-align: center;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  margin-top: var(--size-4-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdf-toolkit-card-actions {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.pdf-toolkit-card-actions button {
+  padding: 2px 6px;
+  height: auto;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pdf-toolkit-card-actions button:hover {
+  background: var(--background-modifier-hover);
+}
+
+.pdf-toolkit-card-actions button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.pdf-toolkit-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-3);
+}
+
+/* --- annotation toolbar (injected above the PDF viewer) --------------- */
+
+/* The PDF view content is already a flex column; the toolbar just needs flex: none. */
+
+.pdftk-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  z-index: 3;
+}
+
+.pdftk-toolbar.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.pdftk-toolbar .pdftk-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-s);
+  color: var(--icon-color);
+}
+
+.pdftk-toolbar .pdftk-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.pdftk-toolbar .pdftk-btn.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.pdftk-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--background-modifier-border);
+  margin: 0 5px;
+}
+
+.pdftk-swatches {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin: 0 4px;
+}
+
+.pdftk-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--background-modifier-border);
+  cursor: pointer;
+}
+
+.pdftk-swatch.is-active {
+  border-color: var(--text-normal);
+  transform: scale(1.15);
+}
+
+.pdftk-width {
+  height: 24px;
+  font-size: var(--font-ui-smaller);
+  padding: 0 4px;
+}
+
+/* --- dark mode for PDF pages (CSS filters on the whole rendered page) --- */
+
+.pdftk-dark-invert .pdf-container .pdfViewer .page,
+.pdftk-dark-invert .pdf-sidebar-container canvas {
+  filter: url(#pdftk-filter-dark);
+}
+
+.pdftk-dark-soft .pdf-container .pdfViewer .page,
+.pdftk-dark-soft .pdf-sidebar-container canvas {
+  filter: url(#pdftk-filter-soft);
+}
+
+.pdftk-dark-dim .pdf-container .pdfViewer .page,
+.pdftk-dark-dim .pdf-sidebar-container canvas {
+  filter: brightness(0.78) sepia(0.18);
+}
+
+.pdftk-dark-invert .pdf-container,
+.pdftk-dark-soft .pdf-container,
+.pdftk-dark-dim .pdf-container {
+  --pdf-background: var(--background-primary);
+}
+
+.pdftk-dark-invert .pdf-container .pdfViewer .page,
+.pdftk-dark-soft .pdf-container .pdfViewer .page {
+  --page-bg-color: transparent;
+  box-shadow: none;
+}
+
+/* --- per-page drawing overlay --------------------------------------- */
+
+.pdftk-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+}
+
+/* highlight layer: blended as a whole with the page underneath */
+.pdftk-blend {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
+  mix-blend-mode: multiply;
+}
+
+.pdftk-blend svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.pdftk-overlay.is-active {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.pdftk-overlay.is-active[data-tool="eraser"] {
+  cursor: cell;
+}
+
+.pdftk-overlay.is-active[data-tool="note"] {
+  cursor: copy;
+}
+
+.pdftk-overlay.is-active[data-tool="text"] {
+  cursor: text;
+}
+
+.pdftk-overlay svg,
+.pdftk-blend svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+/* Shapes never intercept the pointer: drawing events go to the overlay div, text selection passes through. */
+.pdftk-overlay svg,
+.pdftk-overlay svg *,
+.pdftk-blend svg,
+.pdftk-blend svg * {
+  pointer-events: none !important;
+}
+
+.pdftk-has-toolbar[data-tool="highlight"] .textLayer,
+.pdftk-has-toolbar[data-tool="underline"] .textLayer,
+.pdftk-has-toolbar[data-tool="strikeout"] .textLayer {
+  cursor: text;
+}
+
+/* --- live layer (annotations written to file but not yet loaded by pdf.js) --- */
+
+.pdftk-blend .pdftk-live-highlight {
+  fill-opacity: 1;
+}
+
+.pdftk-overlay .pdftk-live-freetext {
+  font-family: Helvetica, Arial, "Microsoft JhengHei", sans-serif;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+}
+
+/* --- sticky note icons -------------------------------------------- */
+
+.pdftk-overlay svg g.pdftk-note,
+.pdftk-overlay svg g.pdftk-note * {
+  pointer-events: auto !important;
+  cursor: pointer;
+}
+
+.annotationLayer .textAnnotation .pdftk-note-icon {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: pointer;
+}
+
+/* --- AI chat panel ------------------------------------------------- */
+
+.pdftk-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+}
+
+.pdftk-chat-head {
+  flex: 0 0 auto;
+  padding: var(--size-4-2) var(--size-4-3);
+  border-bottom: 1px solid var(--background-modifier-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-1);
+}
+
+.pdftk-chat-target {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pdftk-chat-ctx {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  font-size: var(--font-ui-small);
+}
+
+.pdftk-chat-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pdftk-chat-chip {
+  font-size: var(--font-ui-smaller);
+  padding: 2px 8px;
+  height: auto;
+  line-height: 1.6;
+  border-radius: var(--radius-l);
+}
+
+.pdftk-chat-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--size-4-2) var(--size-4-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.pdftk-chat-msg {
+  border-radius: var(--radius-m);
+  padding: var(--size-4-2) var(--size-4-3);
+  font-size: var(--font-ui-small);
+  max-width: 100%;
+}
+
+.pdftk-chat-msg.is-user {
+  background: var(--background-secondary);
+  align-self: flex-end;
+  white-space: pre-wrap;
+}
+
+.pdftk-chat-msg.is-assistant {
+  background: var(--background-primary-alt);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.pdftk-chat-body > :first-child {
+  margin-top: 0;
+}
+
+.pdftk-chat-body > :last-child {
+  margin-bottom: 0;
+}
+
+.pdftk-chat-tools {
+  display: flex;
+  gap: 4px;
+  margin-top: var(--size-4-1);
+}
+
+.pdftk-chat-input {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--background-modifier-border);
+  padding: var(--size-4-2) var(--size-4-3);
+  display: flex;
+  gap: var(--size-4-2);
+  align-items: flex-end;
+}
+
+.pdftk-chat-input textarea {
+  flex: 1 1 auto;
+  resize: vertical;
+  min-height: 60px;
+  font-size: var(--font-ui-small);
+}
+
+.pdftk-chat-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pdftk-chat-btns button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- reference hover card ------------------------------------------- */
+
+.pdftk-refpop {
+  position: fixed;
+  z-index: var(--layer-popover, 30);
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-l);
+  padding: var(--size-4-2) var(--size-4-3);
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+}
+
+.pdftk-refpop-entry + .pdftk-refpop-entry {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: var(--size-4-2);
+  padding-top: var(--size-4-2);
+}
+
+.pdftk-refpop-head {
+  display: flex;
+  gap: var(--size-4-2);
+  align-items: baseline;
+  margin-bottom: 2px;
+}
+
+.pdftk-refpop-num {
+  color: var(--text-accent);
+  font-weight: var(--font-semibold);
+  flex: 0 0 auto;
+}
+
+.pdftk-refpop-title {
+  font-weight: var(--font-medium);
+}
+
+.pdftk-refpop-text {
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.pdftk-refpop-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: var(--size-4-1);
+}
+
+.pdftk-refpop-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  text-decoration: none;
+}
+
+.pdftk-refpop-link svg {
+  width: 13px;
+  height: 13px;
+}
+
+.pdftk-reflist-modal {
+  width: min(820px, 92vw);
+}
+
+.pdftk-reflist {
+  max-height: 65vh;
+  overflow-y: auto;
+  font-size: var(--font-ui-small);
+}
+
+/* --- custom prompt rows in settings --------------------------------- */
+
+.pdftk-prompt-row .setting-item-control {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: var(--size-4-2);
+}
+
+.pdftk-prompt-row .setting-item-info {
+  display: none;
+}
+
+.pdftk-prompt-row .pdftk-prompt-text {
+  width: 100%;
+  min-width: 100%;
+  font-family: var(--font-interface);
+}

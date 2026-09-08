@@ -1,0 +1,9 @@
+{
+  "id": "pdf-toolkit",
+  "name": "PDF Toolkit",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Acrobat-style PDF tools inside Obsidian: merge, split, extract, rotate, organize pages, watermark, page numbers, crop, protect/unlock, metadata, forms, text extraction, image export and more. Works on .pdf files only.",
+  "author": "River",
+  "isDesktopOnly": true
+}
