@@ -35,12 +35,15 @@ import { EncryptedError, FontProvider, PDFDocument } from "./pdf/ops";
 import { extractText, renderPagesToPng } from "./pdf/pdfjs";
 import { FieldSpec, FormValues, formModal, pickFilesOrdered, pickOneFile, promptPageRange, promptPassword, showInfoModal } from "./ui/modals";
 import { OrganizeModal } from "./ui/organize";
-import { PdfToolbar } from "./ui/toolbar";
+import { PdfToolbar, TOOLS } from "./ui/toolbar";
 import { ensurePaperFolder, exportBuiltinTemplate, listTemplates, openReadingNote } from "./ui/reading";
 import { CHAT_VIEW, ChatContext, ChatView, CtxMode } from "./ui/chat";
 import { REFS_VIEW, RefsView } from "./ui/refsview";
 import { ensureDarkFilters, removeDarkFilters } from "./ui/darkmode";
 import type { LlmProvider } from "./llm/runner";
+import type { ProviderProfile } from "./llm/models";
+import { ChatHistoryStore } from "./llm/storage";
+import { SummaryStore } from "./llm/summary-store";
 
 /* ------------------------------------------------------------------ */
 /* Settings                                                             */
@@ -54,6 +57,10 @@ interface Settings {
   thumbWidth: number;
   ribbon: boolean;
   showToolbar: boolean;
+  pdfUndoShortcuts: boolean;
+  pdfSingleKeys: boolean;
+  annotationColors: string;
+  reuseReadingPane: boolean;
   author: string;
   highlightColor: string;
   drawColor: string;
@@ -79,12 +86,20 @@ interface Settings {
   refHover: boolean;
   organizeFolders: boolean;
   refQuestion: string;
+  refAutoSummary: boolean;
+  refSummaryModel: string;
+  llmEffort: string;
+  llmEnabledProviders: LlmProvider[];
+  llmProfiles: Partial<Record<LlmProvider, ProviderProfile>>;
+  llmModelCatalog: Record<LlmProvider, string>;
+  chatHistoryFolder: string;
 }
 
 export interface CustomPrompt {
   name: string;
   mode: CtxMode;
   prompt: string;
+  description?: string;
 }
 
 
@@ -97,6 +112,10 @@ const DEFAULT_SETTINGS: Settings = {
   thumbWidth: 140,
   ribbon: true,
   showToolbar: true,
+  pdfUndoShortcuts: true,
+  pdfSingleKeys: false,
+  annotationColors: "",
+  reuseReadingPane: true,
   author: "",
   highlightColor: "#ffe11a",
   drawColor: "#f85149",
@@ -121,6 +140,13 @@ const DEFAULT_SETTINGS: Settings = {
   refHover: true,
   organizeFolders: true,
   refQuestion: "",
+  refAutoSummary: true,
+  refSummaryModel: "",
+  llmEffort: "",
+  llmEnabledProviders: ["claude", "codex"],
+  llmProfiles: {},
+  llmModelCatalog: { claude: "", codex: "", custom: "" },
+  chatHistoryFolder: "",
 };
 
 /* ------------------------------------------------------------------ */
@@ -146,6 +172,8 @@ interface Loaded {
 }
 
 export default class PdfToolkitPlugin extends Plugin {
+  chatHistory!: ChatHistoryStore;
+  summaryStore!: SummaryStore;
   settings: Settings = DEFAULT_SETTINGS;
   tools: Tool[] = [];
   private fontCache: { path: string; bytes: Uint8Array } | null = null;
@@ -153,6 +181,9 @@ export default class PdfToolkitPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    const storageFolder = `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+    this.chatHistory = new ChatHistoryStore(this.app.vault.adapter, `${storageFolder}/conversation-index.json`);
+    this.summaryStore = new SummaryStore(this.app.vault.adapter, `${storageFolder}/reference-summaries.json`);
     setLang(this.settings.language);
     this.buildTools();
 
@@ -273,6 +304,7 @@ export default class PdfToolkitPlugin extends Plugin {
     });
 
     this.registerView(CHAT_VIEW, (leaf) => new ChatView(leaf, this));
+    this.addRibbonIcon("messages-square", t("tb_chat"), () => void this.openChat());
     this.addCommand({ id: "open-chat", name: t("tb_chat"), callback: () => void this.openChat() });
     this.registerView(REFS_VIEW, (leaf) => new RefsView(leaf, this));
     this.addCommand({ id: "open-refs", name: t("cmd_openRefs"), callback: () => void this.openRefsView() });
@@ -288,6 +320,25 @@ export default class PdfToolkitPlugin extends Plugin {
     });
     ensureDarkFilters(this.settings.darkBg, this.settings.darkText);
 
+    for (const tool of TOOLS) this.addCommand({
+      id: "annotation-" + tool.id, name: t(tool.name),
+      checkCallback: (checking) => {
+        const toolbar = this.getActiveToolbar();
+        if (!toolbar) return false;
+        if (!checking) toolbar.setTool(tool.id);
+        return true;
+      },
+    });
+    for (const action of ["undo", "redo", "clear"] as const) this.addCommand({
+      id: "annotation-" + action, name: t(action === "undo" ? "tb_undo" : action === "redo" ? "tb_redo" : "tb_clearPage"),
+      checkCallback: (checking) => {
+        const toolbar = this.getActiveToolbar();
+        if (!toolbar) return false;
+        if (!checking) void (action === "clear" ? toolbar.clearPage() : toolbar.undo(action === "redo"));
+        return true;
+      },
+    });
+
     // Annotation toolbar on every PDF view
     this.registerEvent(this.app.workspace.on("layout-change", () => this.ensureToolbars()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.ensureToolbars()));
@@ -296,6 +347,7 @@ export default class PdfToolkitPlugin extends Plugin {
   }
 
   onunload() {
+    this.summaryStore?.dispose();
     this.removeToolbars();
     removeDarkFilters();
   }
@@ -347,6 +399,12 @@ export default class PdfToolkitPlugin extends Plugin {
     }
     await this.app.workspace.revealLeaf(leaf);
     return leaf.view instanceof ChatView ? leaf.view : null;
+  }
+
+  async addSelectionToChat(toolbar: PdfToolbar, context: ChatContext) {
+    this.lastToolbar = toolbar;
+    const view = await this.openChat();
+    view?.attachSelection(context);
   }
 
   async openRefsView() {
@@ -407,12 +465,19 @@ export default class PdfToolkitPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings.llmProfiles = { ...this.settings.llmProfiles };
+    this.settings.llmModelCatalog = Object.assign({ claude: "", codex: "", custom: "" }, this.settings.llmModelCatalog);
+    this.settings.llmEnabledProviders = [...this.settings.llmEnabledProviders];
+    if (!this.settings.llmEnabledProviders.includes(this.settings.llmProvider)) this.settings.llmEnabledProviders.push(this.settings.llmProvider);
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
     setLang(this.settings.language);
     ensureDarkFilters(this.settings.darkBg, this.settings.darkText);
+    for (const leaf of this.app.workspace.getLeavesOfType(CHAT_VIEW)) {
+      if (leaf.view instanceof ChatView) leaf.view.refreshSettings();
+    }
   }
 
   /* ---------------------------------------------------------------- */
@@ -1259,14 +1324,41 @@ class PdfToolkitSettingTab extends PluginSettingTab {
     );
 
     new Setting(containerEl).setName(t("setLlm")).setHeading();
+    for (const provider of ["claude", "codex", "custom"] as LlmProvider[]) {
+      new Setting(containerEl).setName(`${t("setProviderVisible")} · ${provider}`)
+        .addToggle((toggle) => toggle.setValue(s.llmEnabledProviders.includes(provider)).onChange(async (enabled) => {
+          if (enabled) s.llmEnabledProviders.push(provider);
+          else if (s.llmEnabledProviders.length > 1) s.llmEnabledProviders = s.llmEnabledProviders.filter((p) => p !== provider);
+          if (!s.llmEnabledProviders.includes(s.llmProvider)) {
+            s.llmProfiles[s.llmProvider] = { model: s.llmModel, effort: s.llmEffort };
+            s.llmProvider = s.llmEnabledProviders[0];
+            s.llmModel = s.llmProfiles[s.llmProvider]?.model || "";
+            s.llmEffort = s.llmProfiles[s.llmProvider]?.effort || "";
+          }
+          await this.plugin.saveSettings();
+          this.display();
+        }));
+      new Setting(containerEl).setName(`${t("setModelCatalog")} · ${provider}`).setDesc(t("setModelCatalogDesc"))
+        .addTextArea((area) => {
+          area.setValue(s.llmModelCatalog[provider]).onChange(async (value) => { s.llmModelCatalog[provider] = value; await this.plugin.saveSettings(); });
+          area.inputEl.rows = 3;
+        });
+    }
+    new Setting(containerEl).setName(t("setChatFolder")).setDesc(t("setChatFolderDesc"))
+      .addText((text) => text.setValue(s.chatHistoryFolder).onChange(async (value) => { s.chatHistoryFolder = value.trim(); await this.plugin.saveSettings(); }));
 
     new Setting(containerEl).setName(t("setLlmProvider")).addDropdown((dd) =>
       dd
         .addOptions({ claude: t("llm_claude"), codex: t("llm_codex"), custom: t("llm_custom") })
         .setValue(s.llmProvider)
         .onChange(async (v) => {
+          s.llmProfiles[s.llmProvider] = { model: s.llmModel, effort: s.llmEffort };
           s.llmProvider = v as LlmProvider;
+          if (!s.llmEnabledProviders.includes(s.llmProvider)) s.llmEnabledProviders.push(s.llmProvider);
+          s.llmModel = s.llmProfiles[s.llmProvider]?.model || "";
+          s.llmEffort = s.llmProfiles[s.llmProvider]?.effort || "";
           await this.plugin.saveSettings();
+          this.display();
         }),
     );
 
@@ -1364,6 +1456,17 @@ class PdfToolkitSettingTab extends PluginSettingTab {
         }),
       );
 
+    new Setting(containerEl).setName(t("setRefAutoSummary")).setDesc(t("setRefAutoSummaryDesc"))
+      .addToggle((toggle) => toggle.setValue(s.refAutoSummary).onChange(async (value) => {
+        s.refAutoSummary = value;
+        await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl).setName(t("setRefSummaryModel")).setDesc(t("setRefSummaryModelDesc"))
+      .addText((text) => text.setValue(s.refSummaryModel).onChange(async (value) => {
+        s.refSummaryModel = value.trim();
+        await this.plugin.saveSettings();
+      }));
+
     new Setting(containerEl).setName(t("setPrompts")).setDesc(t("setPromptsDesc")).setHeading();
 
     s.customPrompts.forEach((p, i) => {
@@ -1383,6 +1486,10 @@ class PdfToolkitSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
       );
+      row.addText((text) => text.setPlaceholder(t("shortcut_description")).setValue(p.description || "").onChange(async (value) => {
+        p.description = value;
+        await this.plugin.saveSettings();
+      }));
       row.addExtraButton((b) =>
         b.setIcon("trash").setTooltip(t("prompt_remove")).onClick(async () => {
           s.customPrompts.splice(i, 1);

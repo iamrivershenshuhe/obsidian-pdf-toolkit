@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { randomUUID } from "crypto";
 
 /*
  * Run a local AI CLI ("harness") with the prompt on stdin and stream its output.
@@ -19,6 +20,7 @@ export interface LlmSettings {
   llmModel: string;
   llmExtraPath: string;
   llmMaxChars: number;
+  llmEffort?: string;
 }
 
 export interface RunResult {
@@ -198,6 +200,10 @@ export interface Command {
 
 export function buildCommand(s: LlmSettings, opts: RunOptions = {}): Command {
   const model = s.llmModel.trim();
+  // Model identifiers cross a shell boundary: reject shell syntax rather than interpolating it.
+  if (model && !/^[\w./:@+\[\]-]+$/.test(model)) throw new Error("Invalid model identifier");
+  const effort = s.llmEffort || "";
+  if (effort && !["minimal", "low", "medium", "high", "xhigh", "max", "ultra"].includes(effort)) throw new Error("Invalid effort level");
   switch (s.llmProvider) {
     case "claude": {
       const exe = s.llmClaudePath.trim() || "claude";
@@ -206,17 +212,22 @@ export function buildCommand(s: LlmSettings, opts: RunOptions = {}): Command {
       else args.push("--output-format", "stream-json", "--verbose", "--include-partial-messages");
       if (opts.resume) args.push("--resume", quote(opts.resume));
       if (model) args.push("--model", model);
+      if (effort) {
+        if (!["low", "medium", "high", "xhigh", "max"].includes(effort)) throw new Error("Effort level is not supported by Claude Code");
+        args.push("--effort", effort);
+      }
       return { line: [quote(exe), ...args].join(" "), streamJson: !opts.plainText };
     }
     case "codex": {
       const exe = s.llmCodexPath.trim() || "codex";
-      const out = path.join(os.tmpdir(), `pdf-toolkit-codex-${Date.now()}.txt`);
+      const out = path.join(os.tmpdir(), `pdf-toolkit-codex-${randomUUID()}.txt`);
       const args = ["exec", "--skip-git-repo-check", "-o", quote(out)];
       if (model) args.push("--model", model);
+      if (effort) args.push("-c", `model_reasoning_effort=${effort}`);
       return { line: [quote(exe), ...args].join(" "), lastMessageFile: out };
     }
     default: {
-      const line = (s.llmCustomCommand || "").split("{model}").join(model);
+      const line = (s.llmCustomCommand || "").split("{model}").join(model).split("{effort}").join(effort);
       return { line };
     }
   }

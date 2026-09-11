@@ -4,6 +4,7 @@
   "description": "Acrobat-style PDF tools for Obsidian",
   "main": "main.js",
   "scripts": {
+    "test:ai": "node test/ai.mjs && node test/reading.mjs && node test/history.mjs",
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
   },
@@ -14,6 +15,7 @@
     "@types/node": "^26.5.0",
     "builtin-modules": "^5.3.0",
     "esbuild": "^0.28.2",
+    "jsdom": "^30.0.1",
     "obsidian": "^1.13.1",
     "tslib": "^2.8.1",
     "typescript": "^7.0.2"

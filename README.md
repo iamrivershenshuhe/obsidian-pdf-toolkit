@@ -26,7 +26,27 @@
 
 ### 問 AI（本機 CLI，不用 API key）
 
-工具列的 💬 按鈕或指令「問 AI 這份 PDF」開右側面板。脈絡可選「選取的文字 / 目前頁面 / 整份文件」，有快捷鍵：解釋選取段落、翻譯、摘要這一頁、關鍵名詞、Andrew Ng 四問。回答可一鍵加到讀論文筆記。
+左側 Ribbon 的對話圖示、PDF 工具列帶「AI」文字的按鈕，或指令「問 AI 這份 PDF」都可開啟右側面板。脈絡可選「選取的文字 / 目前頁面 / 整份文件」，內建解釋、翻譯、摘要、關鍵名詞與 Andrew Ng 四問。回答可一鍵加到讀論文筆記。
+
+使用 PDF 工具列的「選取」模式反白文字，放開滑鼠後會出現「將此段加入 AI 對話」。可連續加入多段（也可來自不同 PDF），每段以附件卡保留檔名、起始頁碼和可展開的文字預覽，按各卡片的「×」只移除該段。相同來源、頁碼與文字不會重複加入。
+
+附件在後續提問會持續帶入，切換頁面／整份文件脈絡也會一併附上；「新對話」會清除附件。移除附件會停止在後續提問重送該段，既有問答仍保留。總字數超過設定上限時會分配每個來源的文字額度，保留所有來源標籤，並在該次提問的來源區標示截短。
+
+AI 側欄提供固定底部輸入區、可收合的閱讀快捷指令、逐段附件管理，以及每次提問可展開的「這次提問附上的來源」。Enter 送出、Shift+Enter 換行；生成期間可按停止。
+
+反白後也可按「加入筆記…」，搜尋並選擇 vault 中的任何 Markdown 筆記。內容以 quote callout 追加到該筆記末尾，附 PDF 頁碼回連；此操作不會移動 PDF。
+
+側欄上方依序提供供應商、模型、effort 三個選單。供應商可在設定顯示／隱藏；切換時記住各供應商上次使用的模型與 effort。Codex 讀取本機 `models_cache.json`；Claude 提供 Fable／Opus／Sonnet／Haiku 別名。可在「增補模型選項」逐行填入 `model-id | 名稱 | low,medium,high`，或在模型選單直接輸入其他 ID。未知能力與 CLI 預設模型只提供預設 effort，避免送出未確認的參數。實際模型權限依帳號、CLI 版本而定；此選單不是帳號可用性驗證。
+
+CLI 參數依 [Codex 設定說明](https://learn.chatgpt.com/docs/config-file/config-reference) 與 [Claude Code 模型說明](https://code.claude.com/docs/en/model-config) 接入。自訂指令可使用 `{model}` 和 `{effort}` 變數。
+
+#### 對話保存
+
+訊息、附件、各次提問來源與輸入草稿會自動保存。預設位置是 PDF 旁的 `<PDF 檔名>.ai/`，每個對話有 `.chat.json`（恢復資料）和 `.md`（可讀副本）；尚未選定 PDF 時使用 `PDF Toolkit/Conversations/`。可在設定指定統一的 vault 內資料夾，既有對話保留原位置。此流程不會自動搬動 PDF。
+
+重新開啟 AI 面板會恢復上次對話；上方「歷史對話」按鈕可搜尋並切換其他對話。「新對話」會保留舊紀錄。生成中約每兩秒保存一次部分回覆，完成、停止或關閉時再保存；意外中斷後可恢復最近已寫入的內容。JSON 是恢復來源，Markdown 是自動更新的副本，建議把要自行編輯的內容摘到另一篇筆記。
+
+完整紀錄都保存在檔案中。重開後不重用舊 CLI session，後續提問沿用現有的最近八則訊息與目前附件作為脈絡，避免把整份歷史無限制送入模型。索引位於插件目錄的 `conversation-index.json`。
 
 提供者（設定裡選）：
 - **Claude Code CLI**：執行 `claude -p`（串流輸出），用你已登入的帳號。
@@ -35,7 +55,7 @@
 
 Obsidian 不會繼承 shell 的 PATH；找不到指令時，在設定填執行檔完整路徑，或把資料夾加到「額外 PATH 資料夾」（常見的 Homebrew、nvm、npm 全域路徑會自動嘗試）。
 
-- Claude Code 會沿用同一個 session（`--resume`），後續問題不必重送脈絡；「新對話」按鈕重置。
+- Claude Code 在同一次開啟期間可沿用 session（`--resume`）；變更模型、effort 或附件時重置。每次提問仍附上目前選定的脈絡。
 - 輸入以 `/` 開頭會列出你的 Claude Code 指令與 skills（`~/.claude/commands`、`~/.claude/skills`、vault 的 `.claude/`）或 Codex prompts，選了會以斜線指令送出。
 - 串流時只更新純文字，結束後才渲染 Markdown；送出鈕在執行中變成停止鈕。
 
@@ -48,6 +68,14 @@ Obsidian 不會繼承 shell 的 PATH；找不到指令時，在設定填執行�
 #### 引用懸浮卡
 
 滑鼠移到內文的 `[12]`、`[3, 5–7]` 或 `(Smith et al., 2020)` 上，會解析文末的 References 並顯示該篇條目，附 Google Scholar、DOI、arXiv、原始 URL 連結，可「跳到該條目」或「加到待追參考文獻」。工具列 📚 按鈕可關閉懸浮、或列出全部參考文獻。解析靠文字規則，排版特殊的論文可能抓不到。
+
+懸浮卡支援 PDF 超連結標註覆蓋在文字上方的情況；不要求 PDF 本身有超連結，只要文字與參考文獻可解析即可。掃描影像、部分上標引用或特殊書目排版仍可能無法辨識。
+
+游標停留約 650 毫秒後，第一篇尚未處理過的引用會查找公開 abstract，再用目前 AI 提供者整理研究問題、方法、結果／貢獻。多篇引用的其他條目可各自按「產生摘要」。離開懸浮卡不取消生成，同一篇生成中再次懸浮會等待同一份工作，不會重複呼叫。
+
+結果與 abstract 原文永久保存在插件目錄的 `reference-summaries.json`，重新開啟 Obsidian 也能讀取。只有「重新生成」會再次呼叫 AI；失敗、未找到摘要或中途關閉插件也不會在下次懸浮時自動重試。卡片可展開「查看摘要原文」，確認 AI 實際讀取的內容。首次速度取決於公開服務及 CLI／模型，並非即時完成。
+
+摘要資料透過 [Crossref API](https://github.com/Crossref/rest-api-doc) 的 DOI／書目查詢，以及 [arXiv API](https://info.arxiv.org/help/api/user-manual.html) 取得。只傳送書目資訊給這些服務，公開摘要則交由已設定的 AI 提供者處理。標題查詢必須匹配書目中的標題，卡片會附摘要來源連結；沒有可確認的公開摘要時會顯示提示，不會僅憑標題產生研究結果。設定可關閉自動摘要，或另填同一提供者支援的較快模型。
 
 #### 參考文獻側欄與「問 AI」
 
@@ -68,6 +96,9 @@ Obsidian 不會繼承 shell 的 PATH；找不到指令時，在設定填執行�
 #### 自訂 AI 提示
 
 設定 → 「自訂 AI 提示」→ 新增：按鈕名稱、脈絡（選取 / 頁面 / 整份）、提示內容。會出現在 AI 面板的按鈕列，內建的五個可以隱藏。
+也可直接在側欄的 Reading Shortcuts 按「新增提示」。卡片顯示名稱與最多三行說明，滑鼠停留或鍵盤聚焦時顯示完整 prompt；自訂卡片的鉛筆按鈕可修改。展開區有高度限制和捲動，不會把整個對話區擠掉。
+
+筆記流程的檢視與後續建議見 [筆記設計檢視](docs/notes-design-review.md)。
 
 ## 其他 PDF 工具
 
@@ -109,6 +140,7 @@ Obsidian 不會繼承 shell 的 PATH；找不到指令時，在設定填執行�
 npm install
 npm run dev     # 監看模式
 npm run build   # 型別檢查 + 壓縮輸出 main.js
+npm run test:ai # 多段上下文、對話競態、引用摘要與卡片互動測試（模擬 DOM／CLI／網路）
 ```
 
 技術：[@cantoo/pdf-lib](https://github.com/cantoo-scribe/pdf-lib)（pdf-lib 的維護分支，支援加密）、`@pdf-lib/fontkit`，文字擷取與縮圖使用 Obsidian 內建的 pdf.js。
@@ -118,3 +150,14 @@ npm run build   # 型別檢查 + 壓縮輸出 main.js
 - OCR（掃描檔辨識）
 - 數位簽章 / 憑證
 - 編修（Redact）、Office 轉 PDF、PDF/A 轉換、進階影像壓縮
+
+
+### Annotation recovery and reading controls
+
+PDF toolbar edits now support undo and redo, including annotation deletion, clearing the current page, note edits and rotation. Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z or Ctrl+Y redoes, and Escape cancels a drawing. Click inside the PDF first; typing fields keep their normal shortcuts. Use the eraser to remove an annotation or the trash action to clear a page, then undo if needed.
+
+History is session-only and belongs to the PDF, so switching papers or reopening a PDF tab retains its history until the plugin reloads. Up to 20 compressed edit snapshots are retained per PDF, fewer for large documents (a single large edit is retained). External file changes invalidate conflicting history. PDF undo does not undo exported Markdown notes or edits made through other applications.
+
+Settings include an annotation palette, optional single-key tools, a switch for built-in undo keys, and reuse of the reading-note pane. All annotation tools and undo/redo/clear are registered under Obsidian Hotkeys for custom bindings. Single-key defaults: V select, U highlight, Shift+U cycle markup, D draw, Shift+D cycle shapes, S sticky note, X text, E eraser.
+
+With companion-pane reuse enabled, different papers open their reading notes in the same pane and keep focus on the PDF. AI continues to use its existing sidebar.

@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { FileView, FuzzySuggestModal, Notice, TFile, normalizePath } from "obsidian";
 import type PdfToolkitPlugin from "../main";
 import { extractText } from "../pdf/pdfjs";
@@ -18,6 +19,12 @@ export interface QuoteInfo {
   page: number;
   link: string;
 }
+
+const readingPanes = new WeakMap<PdfToolkitPlugin, import("obsidian").WorkspaceLeaf>();
+
+const AI_MARKER = "<!-- pdf-toolkit:ai -->";
+const REFERENCE_MARKER = "<!-- pdf-toolkit:references -->";
+const noteJobs = new WeakMap<PdfToolkitPlugin, Map<TFile, Promise<TFile | null>>>();
 
 const HIGHLIGHT_MARKER = "<!-- pdf-toolkit:highlights -->";
 
@@ -60,15 +67,26 @@ export async function ensurePaperFolder(plugin: PdfToolkitPlugin, file: TFile): 
 }
 
 export function readingNotePath(plugin: PdfToolkitPlugin, file: TFile): string {
-  const folder = plugin.settings.readingFolder ? normalizePath(plugin.settings.readingFolder) : paperFolder(plugin, file);
-  return joinPath(folder, `${file.basename}.reading.md`);
+  const folder = plugin.settings.readingFolder ? normalizePath(plugin.settings.readingFolder) : folderOf(file);
+  const suffix = plugin.settings.readingFolder ? "-" + createHash("sha256").update(file.path).digest("hex").slice(0, 12) : "";
+  return joinPath(folder, `${file.basename}${suffix}.reading.md`);
 }
 
 export function getReadingNote(plugin: PdfToolkitPlugin, file: TFile): TFile | null {
-  const candidates = [readingNotePath(plugin, file), joinPath(folderOf(file), `${file.basename}.reading.md`)];
+  const candidates = [readingNotePath(plugin, file), joinPath(folderOf(file), `${file.basename}.reading.md`), joinPath(paperFolder(plugin, file), `${file.basename}.reading.md`)];
   for (const p of candidates) {
     const f = plugin.app.vault.getAbstractFileByPath(p);
-    if (f instanceof TFile) return f;
+    if (f instanceof TFile) {
+      const source = plugin.app.metadataCache.getFileCache(f)?.frontmatter?.source;
+      if (!source || source === "[[" + file.path + "]]") return f;
+    }
+  }
+  // Recognize older notes and notes whose source links Obsidian updated after a rename.
+  for (const note of plugin.app.vault.getMarkdownFiles()) {
+    const source = plugin.app.metadataCache.getFileCache(note)?.frontmatter?.source;
+    if (typeof source !== "string") continue;
+    const match = source.match(/^\[\[([^|#\]]+)(?:[^\]]*)\]\]$/);
+    if (match && plugin.app.metadataCache.getFirstLinkpathDest(match[1], note.path)?.path === file.path) return note;
   }
   return null;
 }
@@ -243,7 +261,11 @@ export function builtinTemplate(): string {
     "{{highlights}}",
     "",
     `## ${t("rn_refs")}`,
+    REFERENCE_MARKER,
     "- [ ] ",
+    "",
+    "## AI discussion",
+    AI_MARKER,
     "",
     `## ${t("rn_summary")}`,
     "",
@@ -336,12 +358,24 @@ export async function exportBuiltinTemplate(plugin: PdfToolkitPlugin): Promise<T
 /* ------------------------------------------------------------------ */
 
 export async function ensureReadingNote(plugin: PdfToolkitPlugin, file: TFile, choice?: TemplateChoice | "ask"): Promise<TFile | null> {
+  let jobs = noteJobs.get(plugin);
+  if (!jobs) { jobs = new Map(); noteJobs.set(plugin, jobs); }
+  const pending = jobs.get(file);
+  if (pending) return pending;
+  const job = createReadingNote(plugin, file, choice);
+  jobs.set(file, job);
+  try { return await job; } finally { jobs.delete(file); }
+}
+
+async function createReadingNote(plugin: PdfToolkitPlugin, file: TFile, choice?: TemplateChoice | "ask"): Promise<TFile | null> {
   const existing = getReadingNote(plugin, file);
   if (existing) return existing;
   const tpl = await resolveTemplate(plugin, choice);
   if (!tpl) return null;
-  if (!plugin.settings.readingFolder) await ensurePaperFolder(plugin, file);
-  const path = readingNotePath(plugin, file);
+  let path = readingNotePath(plugin, file);
+  const base = path.slice(0, -3);
+  let suffix = 2;
+  while (plugin.app.vault.getAbstractFileByPath(path)) path = `${base}-${suffix++}.md`;
   await ensureFolder(plugin.app, path.slice(0, path.lastIndexOf("/") > 0 ? path.lastIndexOf("/") : 0));
   const n = new Notice(t("working"), 0);
   try {
@@ -364,11 +398,19 @@ export async function openReadingNote(plugin: PdfToolkitPlugin, file: TFile, cho
     if (!target && leaf.view instanceof FileView && leaf.view.file === note) target = leaf;
   });
   if (target) {
-    plugin.app.workspace.setActiveLeaf(target, { focus: true });
+    if (!plugin.settings.reuseReadingPane) plugin.app.workspace.setActiveLeaf(target, { focus: true });
+    else readingPanes.set(plugin, target);
     return;
   }
-  const leaf = plugin.app.workspace.getLeaf("split", "vertical");
-  await leaf.openFile(note);
+  const workspace = plugin.app.workspace;
+  const previous = workspace.getMostRecentLeaf();
+  const remembered = plugin.settings.reuseReadingPane ? readingPanes.get(plugin) : undefined;
+  let valid = false;
+  workspace.iterateAllLeaves((leaf) => { if (leaf === remembered && leaf.view instanceof FileView && leaf.view.file?.extension === "md") valid = true; });
+  const leaf = valid ? remembered! : workspace.getLeaf("split", "vertical");
+  if (plugin.settings.reuseReadingPane) readingPanes.set(plugin, leaf);
+  await leaf.openFile(note, { active: !plugin.settings.reuseReadingPane });
+  if (plugin.settings.reuseReadingPane && previous) workspace.setActiveLeaf(previous, { focus: true });
 }
 
 /** Append a reference entry as a to-do under the "References to follow" heading. */
@@ -380,21 +422,22 @@ export async function appendReference(plugin: PdfToolkitPlugin, file: TFile, ent
   const line = `- [ ] ${label}${entry.text} — [Scholar](${scholar})${extra}`;
   await plugin.app.vault.process(note, (data) => {
     if (data.includes(entry.text)) return data;
+    if (data.includes(REFERENCE_MARKER)) return insertInSection(data, line, REFERENCE_MARKER, t("rn_refs"));
     const heading = `\n## ${t("rn_refs")}`;
     const idx = data.indexOf(heading);
-    if (idx < 0) return data.replace(/\s*$/, "") + `\n\n## ${t("rn_refs")}\n${line}\n`;
+    if (idx < 0) return data.replace(/\s*$/, "") + `\n\n## ${t("rn_refs")}\n${REFERENCE_MARKER}\n${line}\n`;
     const after = idx + heading.length;
     const rest = data.slice(after);
     const next = rest.search(/\n## /);
     const insertAt = next < 0 ? data.length : after + next;
     let section = data.slice(after, insertAt).replace(/\n- \[ \]\s*(?=\n|$)/g, ""); // drop the empty placeholder
     section = section.replace(/\s*$/, "") + `\n${line}\n`;
-    return data.slice(0, after) + section + data.slice(insertAt).replace(/^\n+/, "\n");
+    return data.slice(0, after) + "\n" + REFERENCE_MARKER + section + data.slice(insertAt).replace(/^\n+/, "\n");
   });
   new Notice(t("ref_added", { name: note.basename }));
 }
 
-/** Append an AI answer (question + answer) to the reading note's highlights section. */
+/** Keep AI discussion separate from verbatim PDF excerpts. */
 export async function appendAiAnswer(plugin: PdfToolkitPlugin, file: TFile, question: string, answer: string): Promise<void> {
   const note = await ensureReadingNote(plugin, file);
   if (!note) return;
@@ -404,14 +447,19 @@ export async function appendAiAnswer(plugin: PdfToolkitPlugin, file: TFile, ques
     .map((l) => `> ${l}`)
     .join("\n");
   const block = [`> [!note] 🤖 ${question.trim().replace(/\s+/g, " ").slice(0, 200)}`, body, ""].join("\n");
-  await plugin.app.vault.process(note, (data) => insertInHighlights(data, block));
+  const source = `> Source: [[${file.path}]] · ${new Date().toISOString()}\n`;
+  await plugin.app.vault.process(note, (data) => insertInSection(data, source + block, AI_MARKER, "AI discussion"));
   new Notice(t("chat_added", { name: note.basename }));
 }
 
 function insertInHighlights(data: string, block: string): string {
-  const idx = data.indexOf(HIGHLIGHT_MARKER);
-  if (idx < 0) return data.replace(/\s*$/, "") + `\n\n## ${t("rn_highlights")}\n${HIGHLIGHT_MARKER}\n\n${block}\n`;
-  const after = idx + HIGHLIGHT_MARKER.length;
+  return insertInSection(data, block, HIGHLIGHT_MARKER, t("rn_highlights"));
+}
+
+function insertInSection(data: string, block: string, marker: string, heading: string): string {
+  const idx = data.indexOf(marker);
+  if (idx < 0) return data.replace(/\s*$/, "") + `\n\n## ${heading}\n${marker}\n\n${block}\n`;
+  const after = idx + marker.length;
   const rest = data.slice(after);
   const next = rest.search(/\n## /);
   const insertAt = next < 0 ? data.length : after + next;

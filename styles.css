@@ -776,6 +776,101 @@
 }
 
 /* --- custom prompt rows in settings --------------------------------- */
+.pdftk-selection-ai {
+  position: fixed;
+  z-index: var(--layer-popover, 30);
+  max-width: calc(100vw - 16px);
+  box-shadow: var(--shadow-s);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+  background: var(--background-primary);
+}
+
+.pdftk-chat-selection {
+  margin: var(--size-4-2) var(--size-4-3);
+  padding: var(--size-4-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  font-size: var(--font-ui-small);
+}
+
+.pdftk-chat-selection.is-hidden { display: none; }
+.pdftk-chat-selection-text { max-height: 120px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 6px; color: var(--text-muted); }
+
+/* Reading assistant: a quiet conversation area and a persistent composer. */
+.pdftk-chat { background: var(--background-primary); min-width: 0; }
+.pdftk-chat-head { padding: 16px; gap: 10px; }
+.pdftk-chat-brand { display: flex; flex: 1; align-items: center; gap: 8px; font-weight: 600; letter-spacing: .02em; }
+.pdftk-chat-brand-icon { display: flex; color: var(--text-accent); }
+.pdftk-chat-brand-icon svg { width: 18px; height: 18px; }
+.pdftk-chat-shortcuts { color: var(--text-muted); font-size: var(--font-ui-small); }
+.pdftk-chat-shortcuts summary { cursor: pointer; }
+.pdftk-chat-quick { padding-top: 10px; gap: 6px; }
+.pdftk-chat-log { padding: 20px 16px; gap: 22px; overscroll-behavior: contain; }
+.pdftk-chat-empty { margin: auto 0; padding: 24px 8px 40px; text-align: center; color: var(--text-muted); }
+.pdftk-chat-empty-icon { width: 48px; height: 48px; display: grid; place-items: center; margin: 0 auto 16px; border-radius: 16px; background: var(--background-secondary); color: var(--text-accent); }
+.pdftk-chat-empty h3 { color: var(--text-normal); font-size: 17px; font-weight: 600; line-height: 1.6; margin: 0 0 8px; }
+.pdftk-chat-empty p { font-size: var(--font-ui-small); line-height: 1.8; margin: 0; }
+.pdftk-chat-msg { min-width: 0; line-height: 1.75; overflow-wrap: anywhere; }
+.pdftk-chat-msg.is-user { max-width: 92%; border-radius: 16px 16px 4px 16px; padding: 12px 14px; white-space: normal; }
+.pdftk-chat-msg.is-user .pdftk-chat-body { white-space: pre-wrap; }
+.pdftk-chat-msg.is-assistant { background: transparent; border: 0; padding: 0; }
+.pdftk-chat-role { font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+.pdftk-chat-msg.is-assistant .pdftk-chat-role { color: var(--text-accent); }
+.pdftk-chat-body pre { overflow-x: auto; max-width: 100%; }
+.pdftk-chat-body table { display: block; overflow-x: auto; max-width: 100%; }
+.pdftk-chat-tools { flex-wrap: wrap; margin-top: 12px; gap: 6px; }
+.pdftk-chat-tools .pdftk-chat-chip { background: transparent; box-shadow: none; color: var(--text-muted); }
+.pdftk-chat-inputwrap { margin: 0 12px 12px; padding: 10px; border: 1px solid var(--background-modifier-border); border-radius: 18px; background: var(--background-primary); box-shadow: var(--shadow-s); min-width: 0; }
+.pdftk-chat-inputwrap:focus-within { border-color: var(--interactive-accent); }
+.pdftk-chat-ctx { padding: 0 4px 8px; flex-wrap: wrap; color: var(--text-muted); font-size: 11px; }
+.pdftk-chat-ctx select { max-width: 100%; font-size: 12px; }
+.pdftk-chat-input { border: 0; padding: 4px; gap: 8px; }
+.pdftk-chat-input textarea { min-width: 0; min-height: 72px; max-height: 180px; resize: none; border: 0; background: transparent; box-shadow: none; padding: 4px 0; line-height: 1.7; }
+.pdftk-chat-input textarea:focus { box-shadow: none; }
+.pdftk-chat-send { width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%; padding: 7px; }
+.pdftk-chat-send svg { width: 18px; height: 18px; }
+.pdftk-chat-status { padding: 6px 4px 0; color: var(--text-faint); font-size: 10px; }
+.pdftk-chat-selection { padding: 0; margin: 0 0 8px; background: transparent; border: 0; max-height: 200px; overflow-y: auto; }
+.pdftk-chat-attachments-label { padding: 4px; font-size: 11px; color: var(--text-muted); }
+.pdftk-chat-attachment { display: flex; align-items: flex-start; gap: 6px; border: 1px solid var(--background-modifier-border); border-radius: 10px; background: var(--background-secondary); padding: 8px; margin-top: 5px; }
+.pdftk-chat-attachment details { flex: 1; min-width: 0; }
+.pdftk-chat-attachment summary { font-size: 12px; overflow-wrap: anywhere; cursor: pointer; line-height: 1.6; }
+.pdftk-chat-remove { flex: 0 0 22px; width: 22px; height: 22px; padding: 3px; }
+.pdftk-chat-remove svg { width: 14px; height: 14px; }
+.pdftk-chat-sources { font-size: 11px; color: var(--text-muted); margin-top: 10px; }
+.pdftk-chat-sources summary { cursor: pointer; }
+.pdftk-chat-sources pre { max-height: 180px; white-space: pre-wrap; overflow: auto; font-family: inherit; font-size: 11px; }
+.pdftk-refpop { border-radius: 14px; padding: 16px; max-height: min(560px, 75vh); }
+.pdftk-refpop-title { line-height: 1.5; font-weight: 600; }
+.pdftk-refpop-text { line-height: 1.6; }
+.pdftk-refpop-links { gap: 8px; margin-top: 10px; }
+.pdftk-ref-summary { margin-top: 12px; padding: 12px; border-radius: 10px; background: var(--background-secondary); }
+.pdftk-ref-summary-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pdftk-ref-summary-title { font-size: 12px; font-weight: 600; color: var(--text-accent); }
+.pdftk-ref-summary-body { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.75; margin-top: 8px; }
+.pdftk-ref-summary-source { font-size: 11px; margin-top: 8px; }
+
+.pdftk-selection-actions { position: fixed; display: flex; flex-wrap: wrap; gap: 4px; padding: 5px; max-width: calc(100vw - 16px); border: 1px solid var(--background-modifier-border); border-radius: 10px; background: var(--background-primary); box-shadow: var(--shadow-m); z-index: var(--layer-popover, 30); }
+.pdftk-selection-actions button { font-size: 12px; }
+.pdftk-toolbar .pdftk-btn:has(.pdftk-ai-label) { width: auto; gap: 4px; padding: 0 6px; }
+.pdftk-ai-label { font-size: 11px; font-weight: 600; }
+.pdftk-chat-model-controls { display: grid; gap: 7px; }
+.pdftk-chat-model-controls label { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 8px; align-items: center; color: var(--text-muted); font-size: 11px; }
+.pdftk-chat-model-controls select { min-width: 0; width: 100%; font-size: 12px; }
+.pdftk-chat-quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 8px; }
+.pdftk-shortcut-item { position: relative; min-width: 0; }
+.pdftk-shortcut-card { width: 100%; height: auto; min-height: 96px; display: flex; flex-direction: column; align-items: flex-start; padding: 13px 28px 13px 13px; border-radius: 12px; text-align: left; gap: 6px; white-space: normal; background: var(--background-secondary); box-shadow: none; border: 1px solid var(--background-modifier-border); }
+.pdftk-shortcut-card:hover, .pdftk-shortcut-card:focus-visible { border-color: var(--interactive-accent); }
+.pdftk-shortcut-name { font-size: 13px; font-weight: 600; color: var(--text-normal); }
+.pdftk-shortcut-description { font-size: 11px; line-height: 1.6; color: var(--text-muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.pdftk-shortcut-tooltip { position: fixed; z-index: var(--layer-popover, 30); border: 1px solid var(--background-modifier-border); box-shadow: var(--shadow-m); border-radius: 10px; padding: 12px; max-height: min(260px, 50vh); overflow: auto; background: var(--background-primary); color: var(--text-normal); font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pdftk-chat-shortcuts[open] .pdftk-chat-quick { max-height: 30vh; overflow-y: auto; padding-right: 3px; }
+.pdftk-shortcut-edit { position: absolute; top: 7px; right: 4px; width: 22px; height: 22px; padding: 3px; }
+.pdftk-shortcut-edit svg { width: 13px; height: 13px; }
+.pdftk-shortcut-add { margin-top: 9px; width: 100%; border-style: dashed; font-size: 12px; box-shadow: none; }
+.pdftk-ref-abstract { margin-top: 8px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; line-height: 1.7; }
 
 .pdftk-prompt-row .setting-item-control {
   flex-wrap: wrap;
@@ -792,3 +887,72 @@
   min-width: 100%;
   font-family: var(--font-interface);
 }
+
+/* Composer footer and gentle, reduced-motion-aware interaction. */
+.pdftk-chat-inputwrap .pdftk-chat-model-controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 4px 2px; border-top: 1px solid var(--background-modifier-border); }
+.pdftk-chat-inputwrap .pdftk-chat-model-controls label { display: flex; flex: 1 1 100px; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.pdftk-chat-inputwrap .pdftk-chat-model-controls select { background: transparent; box-shadow: none; font-size: 11px; height: 27px; }
+.pdftk-chat-pending-shortcuts { max-height: 170px; overflow-y: auto; }
+.pdftk-shortcut-pending { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); }
+.pdftk-shortcut-pending details { flex: 1; min-width: 0; font-size: 12px; }
+.pdftk-shortcut-pending summary { cursor: pointer; overflow-wrap: anywhere; color: var(--text-accent); }
+.pdftk-shortcut-pending p { white-space: pre-wrap; line-height: 1.6; }
+.pdftk-shortcut-pending button { flex-shrink: 0; }
+.pdftk-chat button, .pdftk-chat select, .pdftk-chat-inputwrap { transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+.pdftk-shortcut-pending, .pdftk-chat-msg, .pdftk-shortcut-tooltip, .pdftk-refpop, .pdftk-chat-shortcuts[open] .pdftk-chat-quick { animation: pdftk-appear 160ms ease-out; }
+@keyframes pdftk-appear { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .pdftk-chat *, .pdftk-shortcut-tooltip, .pdftk-refpop { animation: none !important; transition: none !important; } }
+
+.pdftk-selection-actions { flex-direction: column; gap: 7px; padding: 9px; width: max-content; animation: pdftk-appear 140ms ease-out; }
+.pdftk-selection-palette, .pdftk-selection-tools, .pdftk-selection-destinations { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.pdftk-selection-label { color: var(--text-muted); font-size: 11px; margin-right: 4px; }
+.pdftk-selection-actions .pdftk-selection-swatch { width: 25px; height: 25px; min-width: 25px; padding: 0; border-radius: 50%; background: var(--swatch-color); border: 2px solid var(--background-primary); box-shadow: 0 0 0 1px var(--background-modifier-border); transition: transform 120ms ease, box-shadow 120ms ease; }
+.pdftk-selection-swatch:hover, .pdftk-selection-swatch:focus-visible { transform: scale(1.12); outline: 2px solid var(--text-normal); outline-offset: 1px; }
+.pdftk-selection-destinations { border-top: 1px solid var(--background-modifier-border); padding-top: 7px; }
+@media (prefers-reduced-motion: reduce) { .pdftk-selection-actions, .pdftk-selection-actions * { animation: none !important; transition: none !important; } }
+
+/* Compact selection toolbar: palette above a single icon row. */
+.pdftk-selection-actions { display: grid; grid-template-columns: auto auto; gap: 6px; padding: 7px; border-radius: 12px; }
+.pdftk-selection-palette { grid-column: 1 / -1; justify-content: center; gap: 9px; padding: 2px 0 6px; border-bottom: 1px solid var(--background-modifier-border); }
+.pdftk-selection-tools, .pdftk-selection-destinations { flex-wrap: nowrap; gap: 2px; }
+.pdftk-selection-destinations { border-top: 0; border-left: 1px solid var(--background-modifier-border); padding: 0 0 0 6px; }
+.pdftk-selection-actions .pdftk-selection-icon { width: 28px; height: 28px; padding: 5px; box-shadow: none; }
+.pdftk-selection-icon svg { width: 17px; height: 17px; }
+@media (max-width: 340px) { .pdftk-selection-actions { grid-template-columns: 1fr; } .pdftk-selection-destinations { border-left: 0; padding: 0; } }
+
+/* Quiet chat sidebar inspired by the supplied editor-panel reference. */
+.pdftk-chat { background: var(--background-primary); min-height: 0; }
+.pdftk-chat [hidden] { display: none !important; }
+.pdftk-chat-head { position: relative; flex: 0 0 auto; padding: 10px 12px 6px; background: transparent; border-bottom: 1px solid var(--background-modifier-border); }
+.pdftk-chat-brand { font-size: 12px; font-weight: 500; }
+.pdftk-chat-brand-icon { display: none; }
+.pdftk-chat-target { font-size: 10px; margin-top: 5px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pdftk-chat-log { flex: 1 1 0; min-height: 0; padding: 12px 16px; }
+.pdftk-chat-empty { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; min-height: 100%; padding: 24px 12px; text-align: left; }
+.pdftk-chat-empty-icon { margin: 0 0 14px; color: var(--interactive-accent); background: transparent; }
+.pdftk-chat-empty h3 { font-size: 23px; font-weight: 500; margin: 0 0 8px; }
+.pdftk-chat-empty p { max-width: 32ch; font-size: 12px; color: var(--text-muted); line-height: 1.7; }
+.pdftk-chat-inputwrap { position: relative; flex: 0 0 auto; margin: 8px 12px 12px; padding: 8px; border-radius: 12px; background: var(--background-secondary); box-shadow: none; }
+.pdftk-chat-input { align-items: flex-end; padding: 2px; }
+.pdftk-chat-input textarea { min-height: 54px; font-size: 13px; }
+.pdftk-chat-add, .pdftk-chat-send { width: 27px; height: 27px; flex: 0 0 27px; padding: 5px; border-radius: 7px; }
+.pdftk-chat-add svg { width: 17px; height: 17px; }
+.pdftk-chat-inputwrap .pdftk-chat-model-controls { flex-wrap: nowrap; gap: 4px; border-top: 0; padding: 6px 0 0; }
+.pdftk-chat-inputwrap .pdftk-chat-model-controls label { flex: 1 1 0; display: block; }
+.pdftk-chat-inputwrap .pdftk-chat-model-controls select { padding: 0 4px; border: 0; border-radius: 5px; font-size: 10px; text-overflow: ellipsis; }
+.pdftk-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.pdftk-chat-add-panel, .pdftk-chat-history-panel { position: absolute; z-index: 20; border: 1px solid var(--background-modifier-border); border-radius: 10px; background: var(--background-secondary); box-shadow: var(--shadow-m); padding: 8px; animation: pdftk-appear 140ms ease-out; }
+.pdftk-chat-add-panel { bottom: calc(100% + 7px); left: 0; right: 0; max-height: min(420px, 50vh); overflow: auto; }
+.pdftk-chat-add-source { display: flex; align-items: center; gap: 8px; width: 100%; justify-content: flex-start; padding: 8px; height: auto; background: transparent; border: 0; box-shadow: none; font-size: 12px; }
+.pdftk-chat-add-source svg { width: 15px; height: 15px; }
+.pdftk-chat-add-source:hover, .pdftk-chat-history-item:hover { background: var(--background-modifier-hover); }
+.pdftk-chat-add-panel .pdftk-chat-shortcuts { margin: 6px 0 0; border-top: 1px solid var(--background-modifier-border); padding: 8px 0 0; }
+.pdftk-chat-history-panel { top: 44px; left: 10px; right: 10px; }
+.pdftk-chat-history-panel input { width: 100%; margin-bottom: 7px; }
+.pdftk-chat-history-list { max-height: 38vh; overflow: auto; }
+.pdftk-chat-history-item { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; height: auto; text-align: left; padding: 9px; background: transparent; box-shadow: none; border: 0; white-space: normal; overflow-wrap: anywhere; }
+.pdftk-chat-history-item small, .pdftk-chat-history-empty { color: var(--text-muted); font-size: 10px; }
+.pdftk-chat-preferences { padding: 10px 0 4px; }
+.pdftk-chat-status { font-size: 9px; }
+.pdftk-chat-msg { box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .pdftk-chat-add-panel, .pdftk-chat-history-panel { animation: none; } }

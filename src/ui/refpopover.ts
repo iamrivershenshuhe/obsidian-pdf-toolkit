@@ -5,6 +5,7 @@ import { Citation, RefEntry, RefList, citationAt, parseReferences, resolveCitati
 import { appendReference } from "./reading";
 import { t } from "../i18n";
 import { errMsg } from "../util";
+import type { SavedSummary } from "../llm/summary-store";
 
 /*
  * Hover a citation like [12] or (Smith et al., 2020) in the PDF text layer → a card with the
@@ -19,6 +20,10 @@ export class RefPopover extends Component {
   private list: RefList | null | undefined;
   private listFor = "";
   private parsing: Promise<RefList | null> | null = null;
+  private parsingFor = "";
+  private pendingKey = "";
+  private generation = 0;
+  private summaryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private plugin: PdfToolkitPlugin,
@@ -42,17 +47,21 @@ export class RefPopover extends Component {
   async getList(): Promise<RefList | null> {
     const path = this.toolbar.file?.path ?? "";
     if (this.list !== undefined && this.listFor === path) return this.list;
-    if (this.parsing) return this.parsing;
+    if (this.parsing && this.parsingFor === path) return this.parsing;
+    this.parsingFor = path;
     this.parsing = (async () => {
+      let result: RefList | null = null;
       try {
         const pages = await this.toolbar.pageTexts();
-        this.list = parseReferences(pages);
+        result = parseReferences(pages);
       } catch {
-        this.list = null;
+        /* Leave the normal reference UI available if text extraction fails. */
       }
+      if (this.toolbar.file?.path !== path) return null;
+      this.list = result;
       this.listFor = path;
-      this.parsing = null;
-      return this.list;
+      if (this.parsingFor === path) this.parsing = null;
+      return result;
     })();
     return this.parsing;
   }
@@ -67,22 +76,35 @@ export class RefPopover extends Component {
       this.cancelHide();
       return;
     }
-    const span = target?.closest<HTMLElement>(".textLayer span");
+    let span = target?.closest<HTMLElement>(".textLayer span");
+    // PDF link annotations sit above the text layer. Locate the text underneath the link.
+    const annotation = target?.closest<HTMLElement>(".annotationLayer a");
+    if (!span && annotation) {
+      const page = annotation.closest<HTMLElement>(".page");
+      span = Array.from(page?.querySelectorAll<HTMLElement>(".textLayer span") ?? []).find((el) => {
+        const rect = el.getBoundingClientRect();
+        return e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+      });
+    }
     if (!span) {
       this.scheduleHide();
       return;
     }
     const doc = span.ownerDocument;
     const range = doc.caretRangeFromPoint?.(e.clientX, e.clientY);
-    if (!range) return;
+    if (!range && !annotation) return;
     // Citations can be split over neighbouring spans ("[" "12" "]"): look at prev + this + next.
     const prev = span.previousElementSibling?.textContent ?? "";
     const own = span.textContent ?? "";
     const next = span.nextElementSibling?.textContent ?? "";
     const text = prev + own + next;
     let offset = prev.length;
-    if (span.contains(range.startContainer)) offset += range.startOffset;
-    const cit = citationAt(text, offset);
+    if (range && span.contains(range.startContainer)) offset += range.startOffset;
+    else offset += Math.floor(own.length / 2);
+    let cit = citationAt(text, offset);
+    if (!cit && annotation && /(?:cite|bib|ref)/i.test(annotation.getAttribute("href") ?? "") && /^\d{1,3}$/.test(own.trim())) {
+      cit = { raw: own, start: 0, end: own.length, numbers: [Number(own.trim())] };
+    }
     if (!cit) {
       this.scheduleHide();
       return;
@@ -92,29 +114,34 @@ export class RefPopover extends Component {
       this.cancelHide();
       return;
     }
+    if (key === this.pendingKey) return;
+    this.pendingKey = key;
     void this.showFor(cit, key, span);
   }
 
   private async showFor(cit: Citation, key: string, anchor: HTMLElement) {
+    const generation = this.generation;
     const list = await this.getList();
+    if (generation !== this.generation || this.pendingKey !== key) return;
+    this.pendingKey = "";
     if (!list) return;
     const entries = resolveCitation(list, cit);
     if (!entries.length) return;
     if (!anchor.isConnected) return;
+    this.render(entries, anchor.getBoundingClientRect(), anchor.ownerDocument);
     this.shownKey = key;
-    this.render(entries, anchor.getBoundingClientRect());
   }
 
-  private render(entries: RefEntry[], at: DOMRect) {
+  private render(entries: RefEntry[], at: DOMRect, doc: Document) {
     this.hide();
-    const el = document.body.createDiv("pdftk-refpop");
+    const el = doc.body.createDiv("pdftk-refpop");
     this.el = el;
     el.addEventListener("mouseenter", () => this.cancelHide());
     el.addEventListener("mouseleave", () => this.scheduleHide());
-    for (const e of entries.slice(0, 6)) this.renderEntry(el, e);
+    for (const [index, e] of entries.slice(0, 6).entries()) this.renderEntry(el, e, false, index === 0 && this.plugin.settings.refAutoSummary);
     // position: below the citation, clamped to the viewport
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const vw = doc.documentElement.clientWidth;
+    const vh = doc.documentElement.clientHeight;
     const w = Math.min(460, vw - 24);
     el.style.width = `${w}px`;
     let left = Math.max(12, Math.min(at.left, vw - w - 12));
@@ -128,9 +155,10 @@ export class RefPopover extends Component {
     }
     left = Math.max(12, Math.min(left, vw - el.offsetWidth - 12));
     el.style.left = `${left}px`;
+    el.style.maxHeight = `${Math.max(80, vh - top - 8)}px`;
   }
 
-  renderEntry(parent: HTMLElement, e: RefEntry, compact = false) {
+  renderEntry(parent: HTMLElement, e: RefEntry, compact = false, autoSummary = false) {
     const row = parent.createDiv("pdftk-refpop-entry");
     const head = row.createDiv("pdftk-refpop-head");
     head.createSpan({ text: e.num !== undefined ? `[${e.num}]` : e.firstAuthor ? `${e.firstAuthor} ${e.year ?? ""}` : "•", cls: "pdftk-refpop-num" });
@@ -174,9 +202,71 @@ export class RefPopover extends Component {
         new Notice(t("failed", { msg: errMsg(err) }));
       }
     };
+    const summary = row.createDiv("pdftk-ref-summary");
+    const summaryHead = summary.createDiv("pdftk-ref-summary-head");
+    summaryHead.createSpan({ text: t("ref_summary"), cls: "pdftk-ref-summary-title" });
+    const start = summaryHead.createEl("button", { text: t("ref_summaryStart"), cls: "pdftk-chat-chip" });
+    const body = summary.createDiv({ text: t("ref_summaryHint"), cls: "pdftk-ref-summary-body" });
+    body.setAttr("role", "status");
+    const source = summary.createDiv("pdftk-ref-summary-source");
+    const store = this.plugin.summaryStore;
+    let active = false;
+    const showSaved = (record: SavedSummary) => {
+      if (!row.isConnected) return;
+      body.setText(record.status === "done" ? record.text : record.status === "missing" ? t("ref_summaryMissing") : t("ref_summaryFailed", { msg: record.text }));
+      start.setText(t("ref_regenerate"));
+      source.empty();
+      if (record.evidence) {
+        const a = source.createEl("a", { text: `${t("ref_summarySource")} · ${record.evidence.provider}`, href: record.evidence.url });
+        a.target = "_blank";
+        a.rel = "noopener";
+        const abstract = source.createEl("details");
+        abstract.createEl("summary", { text: t("ref_viewAbstract") });
+        abstract.createDiv({ text: record.evidence.abstract, cls: "pdftk-ref-abstract" });
+      }
+    };
+    const run = async (force = false) => {
+      if (!store) return;
+      active = true;
+      start.setText(t("chat_stop"));
+      body.setText(t("ref_summaryLoading"));
+      try {
+        const settings = this.plugin.settings;
+        const record = await store.generate(e, { ...settings,
+          llmModel: settings.refSummaryModel.trim() || settings.llmModel,
+          llmEffort: settings.refSummaryModel.trim() ? "" : settings.llmEffort,
+        }, this.plugin.vaultPath(), t("ref_summaryLanguage"), force);
+        showSaved(record);
+      } catch (err) {
+        if (row.isConnected) {
+          body.setText(t("ref_summaryFailed", { msg: errMsg(err) }));
+          start.setText(t("ref_regenerate"));
+        }
+      } finally { active = false; }
+    };
+    start.onclick = () => {
+      if (autoSummary && this.summaryTimer !== null) clearTimeout(this.summaryTimer);
+      this.summaryTimer = null;
+      if (active || store?.pending(e)) { store?.stop(e); return; }
+      void run(true);
+    };
+    void (async () => {
+      if (!store) return;
+      try {
+        const saved = await store.get(e);
+        if (!row.isConnected) return;
+        if (store.pending(e)) { await run(); return; }
+        if (saved) { showSaved(saved); return; }
+        if (autoSummary) this.summaryTimer = setTimeout(() => {
+          this.summaryTimer = null;
+          if (row.isConnected && !active && this.plugin.settings.refAutoSummary) void run();
+        }, 650);
+      } catch (err) { if (row.isConnected) body.setText(t("ref_summaryFailed", { msg: errMsg(err) })); }
+    })();
   }
 
   private scheduleHide() {
+    this.pendingKey = "";
     if (this.hideTimer !== null || !this.el) return;
     this.hideTimer = window.setTimeout(() => {
       this.hideTimer = null;
@@ -192,6 +282,10 @@ export class RefPopover extends Component {
   }
 
   hide() {
+    this.generation++;
+    this.pendingKey = "";
+    if (this.summaryTimer !== null) clearTimeout(this.summaryTimer);
+    this.summaryTimer = null;
     this.cancelHide();
     this.el?.remove();
     this.el = null;

@@ -1,6 +1,9 @@
+import { historyFor, sameBytes } from "../pdf/edit-history";
 import { Component, FileView, Menu, Notice, TFile, setIcon } from "obsidian";
 import { degrees } from "@cantoo/pdf-lib";
 import type PdfToolkitPlugin from "../main";
+import type { ChatContext } from "./chat";
+import { quoteToChosenNote } from "./note-picker";
 import { appendQuote, openReadingNote, selectionLink, QuoteInfo } from "./reading";
 import { extractText } from "../pdf/pdfjs";
 import { RefPopover } from "./refpopover";
@@ -34,7 +37,7 @@ interface ToolDef {
   sepBefore?: boolean;
 }
 
-const TOOLS: ToolDef[] = [
+export const TOOLS: ToolDef[] = [
   { id: "select", icon: "mouse-pointer", name: "tb_select" },
   { id: "highlight", icon: "highlighter", name: "tb_highlight" },
   { id: "underline", icon: "underline", name: "tb_underline" },
@@ -151,6 +154,7 @@ export class PdfToolbar extends Component {
   private lastFile: TFile | null = null;
   private lastDoc: Any = null;
   private drag: Drag | null = null;
+  private selectionAction: HTMLElement | null = null;
 
   /** live layer: pageIndex → annotations */
   private live = new Map<number, LiveAnnot[]>();
@@ -190,20 +194,40 @@ export class PdfToolbar extends Component {
     this.el = createDiv("pdftk-toolbar");
     content.prepend(this.el);
     content.addClass("pdftk-has-toolbar");
+    this.registerDomEvent(content, "pointerdown", (event) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest("input, textarea, select, button, [contenteditable]")) { content.setAttr("tabindex", "-1"); content.focus({ preventScroll: true }); }
+    });
     this.buildBar();
     this.patchReload();
     this.refPop = new RefPopover(this.plugin, this);
     this.addChild(this.refPop);
     this.refPop.attach(content);
     this.registerDomEvent(content, "mouseup", () => this.onMouseUp());
+    const doc = content.ownerDocument;
+    this.registerDomEvent(doc, "pointerdown", (e) => {
+      if (!this.selectionAction?.contains(e.target as Node)) this.hideSelectionAction();
+    });
+    this.registerDomEvent(doc, "selectionchange", () => {
+      if (doc.getSelection()?.isCollapsed) this.hideSelectionAction();
+    });
+    this.registerDomEvent(doc, "scroll", () => this.hideSelectionAction(), true);
+    if (doc.defaultView) this.registerDomEvent(doc.defaultView, "resize", () => this.hideSelectionAction());
+    this.registerDomEvent(doc, "keydown", (e) => {
+      if (e.key === "Escape") this.hideSelectionAction();
+    });
+    this.registerDomEvent(content, "keyup", (e) => {
+      if (e.key.startsWith("Arrow") && e.shiftKey) this.showSelectionAction();
+    });
     this.registerDomEvent(content, "keydown", (e) => {
-      if (e.key === "Escape" && this.tool !== "select") this.setTool("select");
+      this.handleShortcut(e);
     });
     this.registerInterval(window.setInterval(() => this.sync(), 500));
     this.sync();
   }
 
   onunload() {
+    this.hideSelectionAction();
     this.cancelDrag();
     this.unhook();
     this.removeOverlays();
@@ -237,6 +261,11 @@ export class PdfToolbar extends Component {
   /* Toolbar DOM                                                        */
   /* ---------------------------------------------------------------- */
 
+  private palette(): string[] {
+    const custom = (this.plugin.settings.annotationColors || "").split(/[\s,]+/).filter((color) => /^#[0-9a-f]{6}$/i.test(color));
+    return custom.length ? [...new Set(custom)].slice(0, 12) : COLORS;
+  }
+
   private buildBar() {
     for (const td of TOOLS) {
       if (td.sepBefore) this.sep();
@@ -245,11 +274,12 @@ export class PdfToolbar extends Component {
         this.iconBtn(td.icon, t(td.name), () => this.setTool(td.id)),
       );
     }
-    this.iconBtn("undo-2", t("tb_undo"), () => void this.undo());
+    this.iconBtn("undo-2", t("tb_undo") + " (Ctrl+Z)", () => void this.undo());
+    this.iconBtn("redo-2", t("tb_redo") + " (Ctrl+Shift+Z)", () => void this.undo(true));
     this.sep();
 
     const sw = this.el.createDiv("pdftk-swatches");
-    for (const c of COLORS) {
+    for (const c of this.palette()) {
       const s = sw.createDiv("pdftk-swatch");
       s.style.background = c;
       s.dataset.color = c;
@@ -277,7 +307,8 @@ export class PdfToolbar extends Component {
       if (this.file) void openReadingNote(this.plugin, this.file).catch((err) => new Notice(t("failed", { msg: errMsg(err) })));
     });
     this.iconBtn("quote", t("tb_quote"), () => void this.quoteSelection());
-    this.iconBtn("message-square", t("tb_chat"), () => void this.plugin.openChat());
+    const chatButton = this.iconBtn("message-square", t("tb_chat"), () => void this.plugin.openChat());
+    chatButton.createSpan({ text: "AI", cls: "pdftk-ai-label" });
     this.iconBtn("book-marked", t("tb_refs"), (e) => this.refsMenu(e));
     this.sep();
     this.iconBtn("rotate-cw", t("tb_rotatePage"), () => void this.rotateCurrentPage());
@@ -362,7 +393,7 @@ export class PdfToolbar extends Component {
   async quoteSelection() {
     const file = this.file;
     const r = this.refs();
-    const sel = window.getSelection();
+    const sel = this.view.contentEl.ownerDocument.getSelection();
     if (!file || !r || !sel || sel.isCollapsed || sel.rangeCount === 0 || !r.viewerEl.contains(sel.getRangeAt(0).commonAncestorContainer)) {
       new Notice(t("quote_noSelection"));
       return;
@@ -398,6 +429,7 @@ export class PdfToolbar extends Component {
   }
 
   setTool(id: ToolId) {
+    this.hideSelectionAction();
     this.cancelDrag();
     this.tool = id;
     this.refreshUi();
@@ -419,6 +451,7 @@ export class PdfToolbar extends Component {
   private sync() {
     // Compare file identity, not path: a rename/move (organise into folder) must keep the live layer.
     if (this.file !== this.lastFile) {
+      this.hideSelectionAction();
       this.lastFile = this.file;
       this.undoStack = [];
       this.password = undefined;
@@ -787,6 +820,7 @@ export class PdfToolbar extends Component {
   }
 
   private async onUp(e: PointerEvent, ov: HTMLElement) {
+    const file = this.file;
     const d = this.drag;
     if (!d || d.overlay !== ov) return;
     this.drag = null;
@@ -843,13 +877,14 @@ export class PdfToolbar extends Component {
         case "note": {
           const p = toPdf(x, y);
           const existing = await this.findNoteAt(pageIndex, p[0], p[1], 3 / (vp.scale || 1));
+          if (this.file !== file) return;
           if (existing) {
             await this.openNoteEditor(existing);
             return;
           }
           const r = await formModal(this.plugin.app, t("tb_noteTitle"), [{ kind: "textarea", key: "c", label: t("tb_content"), rows: 5 }]);
           const text = r ? String(r.c).trim() : "";
-          if (!text) return;
+          if (!text || this.file !== file) return;
           await this.mutate((doc) => {
             const nm = ann.addNote(doc, pageIndex, p[0], p[1], color, { ...meta, contents: text });
             this.undoStack.push({ page: pageIndex, nm });
@@ -887,7 +922,7 @@ export class PdfToolbar extends Component {
           const tol = 4 / (vp.scale || 1);
           let hitNm: string | undefined;
           let found = false;
-          await this.mutate(
+          const saved = await this.mutate(
             (doc) => {
               const hits = ann.annotationsAt(doc, pageIndex, p[0], p[1], tol);
               if (!hits.length) {
@@ -903,7 +938,7 @@ export class PdfToolbar extends Component {
             // an annotation pdf.js already rendered can only disappear through a reload
             () => found && !this.isLive(hitNm),
           );
-          if (hitNm) this.removeLive(hitNm);
+          if (saved && hitNm) this.removeLive(hitNm);
           break;
         }
       }
@@ -934,6 +969,7 @@ export class PdfToolbar extends Component {
   }
 
   async openNoteEditor(n: NoteRef) {
+    const file = this.file;
     const r = await formModal(
       this.plugin.app,
       t("tb_noteTitle"),
@@ -943,15 +979,15 @@ export class PdfToolbar extends Component {
       ],
       t("save"),
     );
-    if (!r) return;
+    if (!r || this.file !== file) return;
     const live = this.isLive(n.nm);
     const match = { nm: n.nm, ref: n.ref };
     if (r.del) {
-      await this.mutate(
+      const saved = await this.mutate(
         (doc) => ann.removeAnnotation(doc, n.page, match),
         () => !live,
       );
-      if (n.nm) {
+      if (saved && n.nm) {
         this.removeLive(n.nm);
         this.undoStack = this.undoStack.filter((u) => u.nm !== n.nm);
       }
@@ -959,12 +995,12 @@ export class PdfToolbar extends Component {
     }
     const text = String(r.c).trim();
     if (text === n.text) return;
-    await this.mutate(
+    const saved = await this.mutate(
       (doc) => ann.setContents(doc, n.page, match, text),
       // pdf.js only shows the popup text it loaded; a baked note needs a reload to show the new text
       () => !live,
     );
-    if (live) {
+    if (saved && live) {
       for (const a of this.live.get(n.page) ?? []) if (a.nm === n.nm) a.text = text;
       this.liveVersion++;
       this.refreshOverlays();
@@ -976,14 +1012,132 @@ export class PdfToolbar extends Component {
   /* ---------------------------------------------------------------- */
 
   private onMouseUp() {
+    if (this.tool === "select") this.showSelectionAction();
     if (!MARKUP.includes(this.tool)) return;
     window.setTimeout(() => void this.applySelection(), 10);
   }
 
-  private async applySelection() {
+  private hideSelectionAction() {
+    this.selectionAction?.remove();
+    this.selectionAction = null;
+  }
+
+  private showSelectionAction() {
+    this.hideSelectionAction();
+    const doc = this.view.contentEl.ownerDocument;
+    const sel = doc.getSelection();
+    const r = this.refs();
+    const file = this.file;
+    if (this.tool !== "select" || !file || !r || !sel || sel.isCollapsed || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0).cloneRange();
+    if (!r.viewerEl.contains(range.commonAncestorContainer)) return;
+    const quote = this.captureQuote(sel);
+    if (!quote) return;
+    const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0);
+    const rect = rects[rects.length - 1];
+    if (!rect) return;
+    const ctx: ChatContext = {
+      fileName: file.name, filePath: file.path, page: quote.page,
+      total: this.pageCount(), mode: "selection", text: quote.text, truncated: false,
+    };
+    const actions = doc.createElement("div");
+    actions.className = "pdftk-selection-actions";
+    actions.setAttr("role", "group");
+    actions.setAttr("aria-label", t("selection_actions"));
+    actions.onpointerdown = (e) => e.preventDefault();
+    const palette = actions.createDiv("pdftk-selection-palette");
+    const icon = (parent: HTMLElement, name: string, label: string, run: (event: MouseEvent) => void) => {
+      const button = parent.createEl("button", { cls: "clickable-icon pdftk-selection-icon" });
+      setIcon(button, name);
+      button.setAttr("aria-label", label);
+      button.setAttr("title", label);
+      button.onclick = run;
+      return button;
+    };
+    const mark = (tool: ToolId, color = this.plugin.settings.highlightColor) => {
+      this.hideSelectionAction();
+      if (this.file !== file || !range.startContainer.isConnected || !range.endContainer.isConnected) return;
+      const selection = doc.getSelection();
+      if (!selection) return;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      void this.applySelection(tool, color).catch((err) => new Notice(t("failed", { msg: errMsg(err) })));
+    };
+    for (const color of this.palette()) {
+      const swatch = palette.createEl("button", { cls: "pdftk-selection-swatch" });
+      swatch.style.setProperty("--swatch-color", color);
+      swatch.setAttr("aria-label", t("tb_highlight") + " " + color);
+      swatch.setAttr("title", t("tb_highlight") + " " + color);
+      swatch.onclick = () => mark("highlight", color);
+    }
+    const tools = actions.createDiv("pdftk-selection-tools");
+    for (const tool of TOOLS.filter((item) => item.id === "underline" || item.id === "strikeout")) {
+      icon(tools, tool.icon, t(tool.name), () => mark(tool.id));
+    }
+    icon(tools, "eraser", t("tb_eraser"), () => this.setTool("eraser"));
+    const copy = (text: string) => {
+      this.hideSelectionAction();
+      void doc.defaultView!.navigator.clipboard.writeText(text).then(() => new Notice(t("copied"))).catch((err) => new Notice(t("failed", { msg: errMsg(err) })));
+    };
+    icon(tools, "copy", t("selection_copyText"), () => copy(quote.text));
+    icon(tools, "link", t("selection_copyLink"), () => copy(quote.link));
+    const destinations = actions.createDiv("pdftk-selection-destinations");
+    icon(destinations, "message-square-plus", t("chat_addSelection"), () => {
+      this.hideSelectionAction();
+      if (this.file !== file) return;
+      ctx.fileName = file.name;
+      ctx.filePath = file.path;
+      void this.plugin.addSelectionToChat(this, ctx).catch((err) => new Notice(t("failed", { msg: errMsg(err) })));
+    });
+    icon(destinations, "file-plus-2", t("note_addSelection"), () => {
+      this.hideSelectionAction();
+      if (this.file !== file) return;
+      void quoteToChosenNote(this.plugin.app, file, quote).catch((err) => new Notice(t("failed", { msg: errMsg(err) })));
+    });
+    icon(destinations, "quote", t("tb_quote"), () => {
+      this.hideSelectionAction();
+      if (this.file !== file || !range.startContainer.isConnected || !range.endContainer.isConnected) return;
+      const selection = doc.getSelection();
+      if (!selection) return;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      void this.quoteSelection();
+    });
+    const undo = icon(destinations, "undo-2", t("tb_undo"), () => {
+      this.hideSelectionAction();
+      if (this.file === file) void this.undo().catch((err) => new Notice(t("failed", { msg: errMsg(err) })));
+    });
+    undo.disabled = !historyFor(this.plugin, file).canUndo || this.busy;
+    const redo = icon(destinations, "redo-2", t("tb_redo"), () => { this.hideSelectionAction(); if (this.file === file) void this.undo(true); });
+    redo.disabled = !historyFor(this.plugin, file).canRedo || this.busy;
+    icon(destinations, "more-horizontal", t("tb_more"), (event) => {
+      this.hideSelectionAction();
+      if (this.file !== file) return;
+      const menu = new Menu();
+      for (const tool of TOOLS.filter((item) => DRAW.includes(item.id))) {
+        menu.addItem((item) => item.setTitle(t(tool.name)).setIcon(tool.icon).onClick(() => { if (this.file === file) this.setTool(tool.id); }));
+      }
+      menu.addSeparator();
+      menu.addItem((item) => item.setTitle(t("tb_clearPage")).setIcon("trash-2").onClick(() => { if (this.file === file) void this.clearPage(); }));
+      menu.addItem((item) => item.setTitle(t("tb_readingNote")).setIcon("book-open").onClick(() => {
+        void openReadingNote(this.plugin, file).catch((err) => new Notice(t("failed", { msg: errMsg(err) })));
+      }));
+      menu.addItem((item) => item.setTitle(t("tb_more")).setIcon("panels-top-left").onClick(() => this.plugin.openToolbox(file)));
+      menu.showAtMouseEvent(event);
+    });
+    doc.body.appendChild(actions);
+    this.selectionAction = actions;
+    const bounds = actions.getBoundingClientRect();
+    const width = doc.documentElement.clientWidth;
+    const height = doc.documentElement.clientHeight;
+    actions.style.left = `${Math.max(8, Math.min(rect.right - bounds.width, width - bounds.width - 8))}px`;
+    actions.style.top = `${Math.max(8, Math.min(rect.bottom + 6, height - bounds.height - 8))}px`;
+  }
+
+  private async applySelection(tool: ToolId = this.tool, colorHex: string = this.color) {
     const r = this.refs();
     if (!r || this.busy) return;
-    const sel = window.getSelection();
+    const sel = this.view.contentEl.ownerDocument.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
     const range = sel.getRangeAt(0);
     if (!r.viewerEl.contains(range.commonAncestorContainer)) return;
@@ -1019,21 +1173,20 @@ export class PdfToolbar extends Component {
       list.push(q);
     }
     if (!byPage.size) return;
-    const quote = this.plugin.settings.autoQuote && this.tool === "highlight" ? this.captureQuote(sel) : null;
+    const quote = this.plugin.settings.autoQuote && tool === "highlight" ? this.captureQuote(sel) : null;
     sel.removeAllRanges();
 
-    const kind: ann.MarkupKind = this.tool === "highlight" ? "Highlight" : this.tool === "underline" ? "Underline" : "StrikeOut";
-    const colorHex = this.color;
+    const kind: ann.MarkupKind = tool === "highlight" ? "Highlight" : tool === "underline" ? "Underline" : "StrikeOut";
     const color = hexToRgb(colorHex);
     const meta: ann.AnnotMeta = { author: this.plugin.settings.author };
-    await this.mutate((doc) => {
+    const saved = await this.mutate((doc) => {
       for (const [n, quads] of byPage) {
         const nm = ann.addTextMarkup(doc, n - 1, quads, kind, color, 1, meta);
         this.undoStack.push({ page: n - 1, nm });
         this.addLive(n - 1, { nm, kind, color: colorHex, width: 1, quads });
       }
     });
-    if (quote && this.file) {
+    if (saved && quote && this.file) {
       try {
         await appendQuote(this.plugin, this.file, quote, undefined, colorHex);
       } catch (err) {
@@ -1046,18 +1199,46 @@ export class PdfToolbar extends Component {
   /* Other actions                                                      */
   /* ---------------------------------------------------------------- */
 
-  private async undo() {
-    const last = this.undoStack.pop();
-    if (!last) {
-      new Notice(t("tb_nothingToUndo"));
-      return;
+  async undo(redo = false) {
+    if (this.drag) { this.cancelDrag(); return; }
+    const file = this.file;
+    if (!file || this.busy) return;
+    const history = historyFor(this.plugin, file);
+    if (history.busy) return;
+    history.busy = this.busy = true;
+    this.el.addClass("is-busy");
+    try {
+      const current = new Uint8Array(await this.plugin.app.vault.readBinary(file));
+      const pos = this.capturePosition();
+      const changed = await history.apply(redo ? "redo" : "undo", current, async (bytes) => {
+        this.suppressReload = false;
+        await this.plugin.app.vault.modifyBinary(file, toArrayBuffer(bytes));
+      });
+      if (changed) { this.clearLive(); this.restorePosition(pos, file); }
+      else new Notice(t("tb_nothingToUndo"));
+    } catch (err) { new Notice(t("failed", { msg: errMsg(err) })); }
+    finally { history.busy = this.busy = false; this.el.removeClass("is-busy"); }
+  }
+
+  handleShortcut(e: KeyboardEvent) {
+    const target = e.target as HTMLElement | null;
+    if (e.defaultPrevented || e.isComposing || target?.closest?.("input, textarea, select, [contenteditable], .modal-container")) return;
+    const key = e.key.toLowerCase();
+    let run: (() => void) | undefined;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && this.plugin.settings.pdfUndoShortcuts !== false) {
+      if (key === "z") run = () => void this.undo(e.shiftKey);
+      if (key === "y" && !e.shiftKey) run = () => void this.undo(true);
+    } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (key === "escape") run = () => { this.cancelDrag(); this.hideSelectionAction(); this.setTool("select"); };
+      if (this.plugin.settings.pdfSingleKeys) {
+        const tools: Record<string, ToolId> = { v: "select", u: "highlight", d: "pen", s: "note", x: "text", e: "eraser" };
+        if (tools[key]) run = () => {
+          const group = key === "u" ? MARKUP : key === "d" ? ["pen", "rect", "ellipse"] as ToolId[] : [];
+          this.setTool(e.shiftKey && group.length ? group[(group.indexOf(this.tool) + 1) % group.length] : tools[key]);
+        };
+      }
     }
-    const live = this.isLive(last.nm);
-    await this.mutate(
-      (doc) => ann.removeAnnotation(doc, last.page, { nm: last.nm }),
-      () => !live,
-    );
-    if (live) this.removeLive(last.nm);
+    if (run) { e.preventDefault(); e.stopPropagation(); if (!e.repeat) run(); }
   }
 
   currentPage(): number {
@@ -1106,10 +1287,11 @@ export class PdfToolbar extends Component {
     );
   }
 
-  private async clearPage() {
+  async clearPage() {
+    const file = this.file;
     const n = this.currentPage();
     const ok = await formModal(this.plugin.app, t("tb_clearPage"), [{ kind: "note", label: t("tb_clearConfirm", { n }) }]);
-    if (!ok) return;
+    if (!ok || this.file !== file) return;
     await this.mutate(
       (doc) => {
         const count = ann.clearAnnotations(doc, n - 1);
@@ -1138,20 +1320,27 @@ export class PdfToolbar extends Component {
     needsReload: () => boolean = () => false,
   ) {
     const file = this.file;
-    if (!file) return;
+    if (!file) return false;
     if (this.busy) {
       new Notice(t("working"));
-      return;
+      return false;
     }
+    const history = historyFor(this.plugin, file);
+    if (history.busy) return false;
+    history.busy = true;
+    const previousLive = new Map([...this.live].map(([page, items]) => [page, items.map((item) => ({ ...item }))]));
     this.busy = true;
     this.el.addClass("is-busy");
     try {
       const L = await this.plugin.loadPdf(file, this.password);
-      if (!L) return;
+      if (!L) return false;
       this.password = L.password;
       const res = await fn(L.doc);
-      if (res === false) return;
+      if (res === false) return false;
       const bytes = await L.doc.save({ useObjectStreams: true, updateFieldAppearances: false });
+      if (this.file !== file) throw new Error("The open PDF changed; the edit was cancelled.");
+      const current = new Uint8Array(await this.plugin.app.vault.readBinary(file));
+      if (!sameBytes(current, L.bytes)) throw new Error("PDF changed while saving; please retry.");
       const reload = needsReload() || !this.patchedOnLoadFile;
       if (reload) {
         const pos = this.capturePosition();
@@ -1166,10 +1355,15 @@ export class PdfToolbar extends Component {
           window.setTimeout(() => (this.suppressReload = false), 1500);
         }
       }
+      history.record(L.bytes, bytes);
+      return true;
     } catch (e) {
+      if (this.file === file) { this.live = previousLive; this.liveVersion++; this.refreshOverlays(); }
       console.error("[pdf-toolkit]", e);
       new Notice(t("failed", { msg: errMsg(e) }), 8000);
+      return false;
     } finally {
+      history.busy = false;
       this.busy = false;
       this.el.removeClass("is-busy");
     }
@@ -1187,6 +1381,7 @@ export class PdfToolbar extends Component {
     let tries = 0;
     let forced = false;
     const tick = () => {
+      if (this.file !== file) return;
       const r = this.refs();
       if (r && r.doc && r.doc !== pos.doc && r.pv.pagesCount > 0) {
         this.lastDoc = r.doc;
@@ -1198,6 +1393,7 @@ export class PdfToolbar extends Component {
           /* ignore */
         }
         window.requestAnimationFrame(() => {
+          if (this.file !== file) return;
           const rr = this.refs();
           if (rr) {
             rr.containerEl.scrollTop = pos.scrollTop;
